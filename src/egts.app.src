@@ -1,0 +1,13 @@
+{application, egts,
+ [
+  {description, ""},
+  {vsn, git},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  logger,
+                  terminator
+                 ]},
+  {env, []}
+ ]}.
