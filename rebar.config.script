@@ -1,0 +1,106 @@
+%% vim: ft=erlang
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% internal functions
+OsGetEnv = fun(Env, Default) ->
+               Val = os:getenv(Env),
+               if
+                 Val =:= false;
+                 Val =:= [] -> Default;
+                 true       -> Val
+               end
+           end,
+
+ConfigGet = fun(Cfg, Key, Default) ->
+                case lists:keyfind(Key, 1, Cfg) of
+                  {Key, Val}  -> Val;
+                  false       -> Default
+                end
+            end,
+
+ConfigSet = fun(Cfg, Key, Val) ->
+                case ConfigGet(Cfg, Key, false) of
+                  false -> [{Key, Val} | Cfg];
+                  OldVal -> lists:keyreplace(Key, 1, Cfg, {Key, Val})
+                end
+            end,
+
+ConfigSetList = fun(Cfg, List) ->
+                    Set = fun(F, Cfg, []) ->
+                              Cfg;
+                             (F, Cfg, [{Key, Val} | Tail]) ->
+                              CfgNew = ConfigSet(Cfg, Key, Val),
+                              F(F, CfgNew, Tail)
+                          end,
+                    Set(Set, Cfg, List)
+                end,
+
+UpperChar = fun(C) when
+                  C >= $a,
+                  C =< $z
+                  ->
+                C - 32;
+               (C) ->
+                C
+            end,
+
+UpperStr = fun(Str) -> [UpperChar(X) || X <- Str] end,
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+UpdateConfigFromFile = fun
+                         (CurrentConfig, []) -> CurrentConfig;
+                         (CurrentConfig, File) ->
+                           case file:consult(File) of
+                             {ok, Terms}  -> ConfigSetList(CurrentConfig, Terms);
+                             _            -> CurrentConfig
+                           end
+                       end,
+
+UpdateConfigFromEnv = fun(CurrentConfig, Env) ->
+                          File = OsGetEnv(Env, []),
+                          UpdateConfigFromFile(CurrentConfig, File)
+                      end,
+
+UpdateConfigFromRebarEnv = fun(CurrentConfig) ->
+                               Cfg = UpdateConfigFromEnv(CurrentConfig, "REBAR_CONFIG"),
+                               os:unsetenv("REBAR_CONFIG"),
+                               Cfg
+                           end,
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+UpdateConfigFromAppEnv = fun(CurrentConfig) ->
+                             [_, AppNameBin | _] = lists:reverse(re:split(SCRIPT, "/")),
+                             AppName = erlang:binary_to_list(AppNameBin),
+                             UpdateConfigFromEnv(CurrentConfig,
+                                                 UpperStr(AppName) ++ "_REBAR_CONFIG")
+                         end,
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+UpdateVCS = fun({SubApp, Version, X}) ->
+          DefaultPrefix = OsGetEnv("REBAR_DEPS_DEFAULT_GIT_PREFIX", "https://github.com/koctep/"),
+          VCSPrefix = fun(EnvName) ->
+                          EnvNameStr = erlang:atom_to_list(EnvName),
+                          EnvGitOS = OsGetEnv(UpperStr(EnvNameStr) ++ "_GIT_PREFIX", DefaultPrefix)
+                      end,
+          AppVCS = fun(Prefix, AppName) ->
+                       Prefix ++ erlang:atom_to_list(AppName)
+                   end,
+          RebarVCS = case X of
+                       {git, env, Ref} ->
+                         {git, AppVCS(VCSPrefix(SubApp), SubApp), Ref};
+                       {git, {env, EnvName}, Ref} ->
+                         {git, AppVCS(VCSPrefix(EnvName), SubApp), Ref};
+                       _ -> X
+                     end,
+          {SubApp, Version, RebarVCS}
+      end,
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+Cfg0 = UpdateConfigFromRebarEnv(CONFIG),
+Cfg1 = UpdateConfigFromAppEnv(Cfg0),
+
+Deps = lists:map(
+         fun(X) ->
+             UpdateVCS(X)
+         end, ConfigGet(Cfg1, deps, [])),
+
+Cfg2 = ConfigSetList(Cfg1, [{deps, Deps}]),
+
+Cfg = Cfg2,
+
+Cfg.
