@@ -37,7 +37,7 @@ position(<<
       {latitude,  sign(LAHS)*Lat*90/16#ffffffff},
       {longitude, sign(LOHS)*Lon*180/16#ffffffff},
       {parking, MV bxor 1},
-      {online, BB bxor 1},
+      {offline, BB},
       {fix, FIX},
       {cs, CS},
       {valid, VLD},
@@ -82,7 +82,8 @@ position_ext(Bits, <<Val:?BYTE, Rest/binary>>, Parsed, 4 = N) when Bits band 1 =
   H = {used, Val},
   position_ext(Bits bsr 1, Rest, [H | Parsed], N + 1);
 position_ext(Bits, <<Val:?USHORT, Rest/binary>>, Parsed, 5 = N) when Bits band 1 =:= 1 ->
-  H = {navigation_systems, nav_systems(Val)},
+%  H = {navigation_systems, nav_systems(Val)},
+  H = {navigation_systems, Val},
   position_ext(Bits bsr 1, Rest, [H | Parsed], N + 1);
 position_ext(Bits, BinData, Parsed, N) ->
   position_ext(Bits bsr 1, BinData, Parsed, N + 1).
@@ -113,7 +114,7 @@ state(<<ST:?BYTE, MPSV:?BYTE, BBV:?BYTE, IBV:?BYTE, _:5, NMS:1, BBU:1, IBU:1>>) 
     {set, [
         {boolean_sensor,
          [{navigation, NMS}, {backup_battery_using, BBU}, {internal_battery_using, IBU}]},
-        {float_sensor, [{main_power, MPSV}, {backup_battery, BBV}, {internal_battery, IBV}]}
+        {float_sensor, [{main_power, MPSV/10}, {backup_battery, BBV/10}, {internal_battery, IBV/10}]}
     ]}
   ];
 state(0)  -> passive;

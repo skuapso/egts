@@ -25,7 +25,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {socket, handler, incomplete = <<>>}).
+-record(state, {socket, handler, incomplete = <<>>, uin}).
 
 -define(MAX_IN_SIZE, 65535).
 -define(MAX_OUT_SIZE, 1400).

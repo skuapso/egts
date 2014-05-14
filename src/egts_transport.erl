@@ -112,4 +112,7 @@ get_service_data(L, Data) ->
   <<SFRD:L/binary, SFRCS:?USHORT, Else/binary>> = Data,
   debug("service data: ~s, crc: ~w", [SFRD, SFRCS]),
   true = egts:check_crc16(SFRCS, SFRD),
+%  {ok, Records} = egts_service:parse(SFRD),
+%  debug("records ~w", [Records]),
+%  {Records, Else}.
   {SFRD, Else}.

@@ -18,7 +18,7 @@ term_identify(Opts, Data, N) when (Opts band 1 =/= 1) ->
   term_identify(Opts bsr 1, Data, N + 1);
 term_identify(Opts, <<Val:?USHORT, Else/binary>>, N)
     when N =:= 0 ->
-  [{hdide, Val}] ++ term_identify(Opts bsr 1, Else, N + 1);
+  [{hdid, Val}] ++ term_identify(Opts bsr 1, Else, N + 1);
 term_identify(Opts, <<Val:15/binary, Else/binary>>, N)
     when N =:= 1 ->
   [{imei, binary_to_integer(Val)}] ++ term_identify(Opts bsr 1, Else, N + 1);
@@ -31,9 +31,9 @@ term_identify(Opts, <<Val:3/binary, Else/binary>>, N)
 term_identify(Opts, Else, N)
     when N =:= 4 ->
   [{ssra, 1}] ++ term_identify(Opts bsr 1, Else, N + 1);
-term_identify(Opts, <<Val:3/binary, Else/binary>>, N)
+term_identify(Opts, <<_:4, MCC:10, MNC:10, Else/binary>>, N)
     when N =:= 5 ->
-  [{nid, Val}] ++ term_identify(Opts bsr 1, Else, N + 1);
+  [{mcc, MCC} + {mnc, MNC}] ++ term_identify(Opts bsr 1, Else, N + 1);
 term_identify(Opts, <<Val:?USHORT, Else/binary>>, N)
     when N =:= 6 ->
   [{bs, Val}] ++ term_identify(Opts bsr 1, Else, N + 1);

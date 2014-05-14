@@ -36,6 +36,7 @@
     uin,
     timeout = ?TIMEOUT,
     answer = <<>>,
+    response = <<>>,
     packet_id,
     local_address = 0
     }).
@@ -106,39 +107,41 @@ packet_type(N) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_call({raw_data, RawData}, _From, #state{uin = undefined} = State) ->
+  {reply, ok, State#state{answer = RawData}};
 handle_call({raw_data, RawData}, {TPid, _Tag},
-            #state{timeout = Timeout, terminator = TPid} = State) ->
-  Answer = %case hooks:run(terminal_raw_data, [?MODULE, RawData], Timeout) of
-%    [] ->
-      <<>>,%;
-%    [{_Module, {answer, RawAnswer}}] ->
-%      RawAnswer
-%  end,
+            #state{timeout = Timeout, uin = UIN, terminator = TPid} = State) ->
+  Answer = case hooks:run(terminal_raw_data, [?MODULE, UIN, RawData], Timeout) of
+    [] ->
+      <<>>;
+    [{Module, {answer, RawAnswer}}] ->
+      {Module, RawAnswer}
+  end,
   {reply, ok, State#state{answer = Answer}, Timeout};
-handle_call({data, []}, {TPid, _Tag},
-            #state{timeout = Timeout, terminator = TPid, answer = Answer} = State)
-    when Answer =/= <<>> ->
-  hooks:run(terminal_answer, [?MODULE, Answer], Timeout),
+handle_call({data, []}, {TPid, _Tag}, #state{timeout = Timeout,
+                                             terminator = TPid,
+                                             uin = UIN,
+                                             answer = {Module, Answer}} = State) ->
+  debug("terminal answer ~w", [{Module, Answer}]),
+  hooks:run(terminal_answer, [Module, UIN, Answer], Timeout),
   ?T:send(TPid, Answer),
-  {reply, ok, State#state{answer = <<>>}, Timeout};
+  {reply, ok, State#state{answer = <<>>, response = <<>>}, Timeout};
 %%--------------------------------------------------------------------
 %% in this case answer should be determinated by module from the internal state
 %%--------------------------------------------------------------------
-handle_call({data, []}, {TPid, _Tag}, #state{timeout = Timeout, terminator = TPid} = State) ->
-  Answer = <<>>, 
-  ?T:send(TPid, Answer),
-  {reply, ok, State#state{answer = <<>>}, Timeout};
+handle_call({data, []} = Data, From, #state{response = Answer} = State) ->
+  handle_call(Data, From, State#state{answer = {?MODULE, Answer}});
 %%--------------------------------------------------------------------
 %% in this case should process parsed data
 %%--------------------------------------------------------------------
 handle_call({egts_pt_routing, RawData, {_PRA, _RCA, _TTL, Data}},
             From,
             State) ->
-  warning("routing packet"),
+  emerg("routing packet"),
   <<_:9/binary, PT:?BYTE, _/binary>> = RawData,
   PacketType = ?T:packet_type(PT),
   handle_call({PacketType, RawData, Data}, From, State);
-handle_call({Type, RawData, Parsed},
+handle_call({_Type, _RawData, Parsed},
             {TPid, _Tag},
             #state{timeout = Timeout, terminator = TPid} = State) ->
   trace("new data"),
@@ -146,12 +149,11 @@ handle_call({Type, RawData, Parsed},
   ServiceFrame = proplists:get_value(service_frame, Parsed, <<>>),
   {ok, ServiceRecords} = ?T:parse({service, ServiceFrame}),
   debug("service records: ~w", [ServiceRecords]),
-  Answers = handle_service_records(ServiceRecords),
+  {Answers, NewState} = handle_service_records(ServiceRecords, State),
   debug("service reponses ~w", [Answers]),
   Response = ?T:response({transport, {PacketID, Answers}}),
   debug("response is ~w", [Response]),
-  ?T:send(TPid, Response),
-  {reply, ok, State#state{}, Timeout};
+  {reply, ok, NewState#state{response = Response}, Timeout};
 handle_call(Request, From, #state{timeout = Timeout, terminator = TPid} = State) ->
   warning("unhandled call ~w from ~w", [Request, From]),
   ?T:close(TPid),
@@ -235,17 +237,48 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-handle_service_records(Services) ->
-  handle_service_records(Services, []).
+handle_service_records(Services, State) ->
+  handle_service_records(Services, [], State).
 
-handle_service_records([], Responses) ->
-  lists:reverse(Responses);
-handle_service_records([Service | Services], Responses) ->
-  Response = handle_service_record(Service),
-  handle_service_records(Services, [Response | Responses]).
+handle_service_records([], Responses, State) ->
+  {lists:reverse(Responses), State};
+handle_service_records([Service | Services], Responses, State) ->
+  {Response, NewState} = handle_service_record(Service, State),
+  handle_service_records(Services, [Response | Responses], NewState).
 
-handle_service_record(S) ->
-  ?T:response({service, S}).
+handle_service_record(Record, #state{uin = undefined,
+                                     answer = RawData,
+                                     terminator = TPid,
+                                     timeout = Timeout} = State) ->
+  {auth, _, [{_, [{auth, AuthData}]}], _} = Record,
+  UIN = proplists:get_value(imei, AuthData,
+                            proplists:get_value(terminal_id, AuthData)),
+  true = (UIN =/= undefined),
+  hooks:run(terminal_uin, [?MODULE, UIN], Timeout),
+  {reply, ok, NewState, Timeout} = handle_call({raw_data, RawData}, {TPid, undefined},
+                          State#state{uin = UIN, answer = <<>>}),
+  handle_service_record(Record, NewState#state{timeout = Timeout});
+handle_service_record({Type, _, Packets, Info} = Record, #state{uin = UIN,
+                                                          timeout = Timeout} = State) ->
+  debug("handling service record ~w", [Record]),
+  [case Packet of
+     {RawPacket, Parsed} ->
+       Type1 = packet_type(Type, Parsed),
+       debug("type: ~w", [Type1]),
+       hooks:run(terminal_packet, [?MODULE, UIN, Type1, RawPacket, Parsed], Timeout);
+     Else -> warning("packet wrong format ~w", [Else])
+   end
+   || Packet <- Packets],
+  {?T:response({service, Info}), State}.
+
+packet_type(auth, _) -> authentication;
+packet_type(teledata, Data) ->
+  Nav = proplists:get_value(navigation, Data),
+  case proplists:get_value(offline, Nav) of
+    1 -> offline;
+    0 -> online
+  end;
+packet_type(_, _) -> unknown.
 
 -define(CRC16Table, {
     16#0000, 16#1021, 16#2042, 16#3063, 16#4084, 16#50A5, 16#60C6, 16#70E7,

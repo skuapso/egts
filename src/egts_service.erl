@@ -8,8 +8,7 @@
 -include_lib("logger/include/log.hrl").
 -include("egts_binary_types.hrl").
 
-response(Data) ->
-  Info = proplists:get_value(info, Data),
+response(Info) ->
   RL = 3,
   RN = proplists:get_value(msg_id, Info),
   SSOD = proplists:get_value(ssod, Info),
@@ -42,6 +41,8 @@ parse(<<RL:?USHORT, RN:?USHORT, SSOD:1, RSOD:1, GRP:1, RPP:2, Opts:3, _/binary>>
   debug("header length ~w", [OptHL]),
   debug("record length ~w", [RL]),
   <<_:5/binary, OptHeader:OptHL/binary, SST:8, RST:8, RecordsBin:RL/binary, Else/binary>> = Data,
+  PL = 5 + OptHL + 2 + RL,
+  <<Parsed:PL/binary, _/binary>> = Data,
   debug("header: ~w, opts: ~w", [OptHeader, Opts]),
   Info = [
       {msg_id, RN},
@@ -54,28 +55,29 @@ parse(<<RL:?USHORT, RN:?USHORT, SSOD:1, RSOD:1, GRP:1, RPP:2, Opts:3, _/binary>>
       ++ parse_header(Opts, OptHeader),
   debug("info ~w", [Info]),
   debug("record ~w", [RecordsBin]),
-  Record = parse_records(service(SST), RecordsBin),
+  {Record, Raw} = parse_records(service(SST), RecordsBin),
   debug("record data ~w", [Record]),
-  CombinedRecord = combine_record(Record),
-  debug("combined record data ~w", [CombinedRecord]),
-  parse(Else, [[{info, Info} | CombinedRecord] | Records]).
+  {CombinedRecord, CombinedRaw} = combine_record(Record, Raw),
+  Combined = merge(CombinedRaw, CombinedRecord),
+  debug("combined record data ~w", [Combined]),
+  parse(Else, [{service(SST), Parsed, Combined, Info} | Records]).
 
 header_length(F) -> header_length(F, 0).
 header_length(0, L) -> L * 4;
 header_length(F, L) -> header_length(F bsr 1, F band 1 + L).
 
-parse_records(SST, Data) -> parse_records(SST, Data, []).
+parse_records(SST, Data) -> parse_records(SST, Data, [], []).
 
-parse_records(_SST, <<>>, Records) -> lists:reverse(Records);
-parse_records(SST, <<Type:?BYTE, L:?USHORT, Data:L/binary, Else/binary>>, Records) ->
+parse_records(_SST, <<>>, Records, Raws) -> {lists:reverse(Records), lists:reverse(Raws)};
+parse_records(SST, <<Type:?BYTE, L:?USHORT, Data:L/binary, Else/binary>>, Records, Raws) ->
   SR = subrecord(SST, Type),
   case misc:compact_list(parse_subrecord(SST, SR, Data)) of
     [] ->
       trace("empty subrecord"),
-      parse_records(SST, Else, Records);
-    SRData -> 
-      debug("subrecord ~w", [SRData]),
-      parse_records(SST, Else, [SRData] ++ Records)
+      parse_records(SST, Else, Records, Raws);
+    SRData ->
+      debug("subrecord ~w", [{Data, SRData}]),
+      parse_records(SST, Else, [SRData | Records], [Data | Raws])
   end.
 
 parse_header(Opts, Header) ->
@@ -126,25 +128,45 @@ subrecord(teledata, 26)     -> abs_loopin;
 subrecord(teledata, 27)     -> lls;
 subrecord(teledata, 28)     -> passengers_counters.
 
-combine_record(Record) -> combine_record(Record, [], []).
-combine_record([], Combined, []) -> lists:reverse(Combined);
-combine_record([], Combined, SubRecord) ->
-  combine_record([], [misc:compact_list(lists:reverse(SubRecord)) | Combined], []);
-combine_record([[{navigation, Data} | T1] | T], Combined, []) ->
-  combine_record(T, Combined, [{navigation, Data} | T1]);
-combine_record([[{navigation, Data} | T1] | T], Combined, SubRecord) ->
-  combine_record(T,
+combine_record(Record, Raws) -> combine_record(Record, Raws, [], [], [], []).
+
+combine_record([], [], Combined, Raws, [], []) ->
+  {lists:reverse(Combined), lists:reverse(Raws)};
+combine_record([], [], Combined, Raws, SubRecord, SubRaws) ->
+  combine_record([], [],
                  [misc:compact_list(lists:reverse(SubRecord)) | Combined],
-                 [{navigation, Data} | T1]);
-combine_record([[{navigation_extra, Data} | T1] | T], Combined, SubRecord) ->
+                 [iolist_to_binary(lists:reverse(SubRaws)) | Raws],
+                 [], []);
+combine_record([[{navigation, Data} | T1] | T], [RN | R],
+               Combined, Raws,
+               [], []) ->
+  trace("new navigation field"),
+  combine_record(T, R,
+                 Combined, Raws,
+                 [{navigation, Data} | T1], [RN]);
+combine_record([[{navigation, Data} | T1] | T], [RN | R],
+               Combined, Raws,
+               SubRecord, SubRaws) ->
+  trace("new navigation field"),
+  combine_record(T, R,
+                 [misc:compact_list(lists:reverse(SubRecord)) | Combined],
+                 [iolist_to_binary(lists:reverse(SubRaws)) | Raws],
+                 [{navigation, Data} | T1], [RN]);
+combine_record([[{navigation_extra, Data} | T1] | T], [RN | R],
+               Combined, Raws,
+               SubRecord, SubRaws) ->
   trace("adding extra navigation data"),
   SR1 = [{navigation, Data} | T1],
   debug("sr1 ~w", [SR1]),
   SR2 = SR1 ++ SubRecord,
-  SR = [[{navigation, Data} | T1] | SubRecord],
   debug("sr data before ~w", [SubRecord]),
   debug("sr2 data after ~w", [SR2]),
-  debug("sr data after  ~w", [SR]),
-  combine_record(T, Combined, SR2);
-combine_record([[H] | T], Combined, SubRecord) ->
-  combine_record(T, Combined, [H | SubRecord]).
+  combine_record(T, R,
+                 Combined, Raws,
+                 SR2, SubRaws ++ [RN]);
+combine_record([[H] | T], [R | RT], Combined, Raws, SubRecord, SubRaws) ->
+  combine_record(T, RT, Combined, Raws, [H | SubRecord], [R | SubRaws]).
+
+merge(L1, L2) -> merge(L1, L2, []).
+merge([E1 | T1], [E2 | T2], L) -> merge(T1, T2, [{E1, E2} | L]);
+merge([], [], L) -> lists:reverse(L).
