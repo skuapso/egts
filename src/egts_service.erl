@@ -1,7 +1,7 @@
 -module(egts_service).
 
 -export([
-  parse/1,
+  parse/2,
   response/1
   ]).
 
@@ -11,13 +11,13 @@
 response(Info) ->
   RL = 3,
   RN = proplists:get_value(msg_id, Info),
-  SSOD = proplists:get_value(ssod, Info),
-  RSOD = proplists:get_value(rsod, Info),
+  RSOD = proplists:get_value(ssod, Info),
+  SSOD = proplists:get_value(rsod, Info),
   GRP = proplists:get_value(group_record, Info),
   RPP = proplists:get_value(rpp, Info),
   Opts = 0,
   SST = service(proplists:get_value(sst, Info)),
-  RST = service(proplists:get_value(rst, Info)),
+  RST = service(response),
   RecordStatus = 0,
   Record = <<RN:?USHORT, RecordStatus:?BYTE>>,
   <<RL:?USHORT,
@@ -31,12 +31,14 @@ response(Info) ->
     RST:8,
     Record/binary>>.
 
-parse(Data) ->
-  {ok, parse(Data, [])}.
+parse(Type, Data) ->
+  trace("parsing ~w: ~w", [Type, Data]),
+  {ok, parse(Type, Data, [])}.
 
-parse(<<>>, P) ->
-  lists:reverse(P);
-parse(<<RL:?USHORT, RN:?USHORT, SSOD:1, RSOD:1, GRP:1, RPP:2, Opts:3, _/binary>> = Data, Records) ->
+parse(_Type, <<>>, P) -> lists:reverse(P);
+parse(egts_pt_appdata = Type,
+      <<RL:?USHORT, RN:?USHORT, SSOD:1, RSOD:1, GRP:1, RPP:2, Opts:3, _/binary>> = Data,
+      Records) ->
   OptHL = header_length(Opts),
   debug("header length ~w", [OptHL]),
   debug("record length ~w", [RL]),
@@ -60,7 +62,7 @@ parse(<<RL:?USHORT, RN:?USHORT, SSOD:1, RSOD:1, GRP:1, RPP:2, Opts:3, _/binary>>
   {CombinedRecord, CombinedRaw} = combine_record(Record, Raw),
   Combined = merge(CombinedRaw, CombinedRecord),
   debug("combined record data ~w", [Combined]),
-  parse(Else, [{service(SST), Parsed, Combined, Info} | Records]).
+  parse(Type, Else, [{service(SST), Parsed, Combined, Info} | Records]).
 
 header_length(F) -> header_length(F, 0).
 header_length(0, L) -> L * 4;
@@ -70,6 +72,8 @@ parse_records(SST, Data) -> parse_records(SST, Data, [], []).
 
 parse_records(_SST, <<>>, Records, Raws) -> {lists:reverse(Records), lists:reverse(Raws)};
 parse_records(SST, <<Type:?BYTE, L:?USHORT, Data:L/binary, Else/binary>>, Records, Raws) ->
+  trace("subrecord ~w", [Data]),
+  trace("else ~w", [Else]),
   SR = subrecord(SST, Type),
   case misc:compact_list(parse_subrecord(SST, SR, Data)) of
     [] ->

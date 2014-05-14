@@ -61,8 +61,8 @@ send(Pid, Data) ->
 
 parse({transport, Data}) ->
   ?TR:parse(Data);
-parse({service, Data}) ->
-  ?SF:parse(Data).
+parse({service, Type, Data}) ->
+  ?SF:parse(Type, Data).
 
 response({transport, Data}) ->
   ?TR:response(Data);
