@@ -1,22 +1,23 @@
 -module(egts_teledata).
 
--export([
-  position/1,
-  position_ext/1,
-  sensors/1,
-  counters/1,
-  state/1,
-  loopin/1,
-  abs_digital/1,
-  abs_analog/1,
-  abs_counter/1,
-  abs_loopin/1,
-  lls/1,
-  passengers_counters/1
-  ]).
+-export([position/1]).
+-export([position_ext/1]).
+-export([sensors/1]).
+-export([counters/1]).
+-export([state/1]).
+-export([loopin/1]).
+-export([abs_digital/1]).
+-export([abs_analog/1]).
+-export([abs_counter/1]).
+-export([abs_loopin/1]).
+-export([lls/1]).
+-export([passengers_counters/1]).
+-export([response/1]).
 
 -include("egts_binary_types.hrl").
 -include_lib("logger/include/log.hrl").
+
+response(Data) -> egts_service:parse(response, Data).
 
 position(<<
         NTM:?UINT,

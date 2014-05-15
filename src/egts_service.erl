@@ -9,7 +9,7 @@
 -include("egts_binary_types.hrl").
 
 response(Info) ->
-  RL = 3,
+  RL = 6,
   RN = proplists:get_value(msg_id, Info),
   RSOD = proplists:get_value(ssod, Info),
   SSOD = proplists:get_value(rsod, Info),
@@ -29,10 +29,14 @@ response(Info) ->
     Opts:3,
     SST:8,
     RST:8,
+    0:8,
+    3:?USHORT,
     Record/binary>>.
 
+parse(response, Data) ->
+  [{data, Data}];
 parse(Type, Data) ->
-  trace("parsing ~w: ~w", [Type, Data]),
+  trace("parsing ~w ~w", [Type, Data]),
   {ok, parse(Type, Data, [])}.
 
 parse(_Type, <<>>, P) -> lists:reverse(P);
@@ -62,7 +66,17 @@ parse(egts_pt_appdata = Type,
   {CombinedRecord, CombinedRaw} = combine_record(Record, Raw),
   Combined = merge(CombinedRaw, CombinedRecord),
   debug("combined record data ~w", [Combined]),
-  parse(Type, Else, [{service(SST), Parsed, Combined, Info} | Records]).
+  parse(Type, Else, [{service(SST), Parsed, Combined, Info} | Records]);
+parse(egts_pt_response = Type,
+      <<RN:?USHORT,
+        RecordStatus:?BYTE,
+        Else/binary>>,
+      []) ->
+  trace("~w record number ~w", [Type, RN]),
+  trace("~w record status ~w", [Type, RecordStatus]),
+  ServiceRecords = parse(egts_pt_appdata, Else, []),
+  trace("~w records ~w", [Type, ServiceRecords]),
+  ServiceRecords.
 
 header_length(F) -> header_length(F, 0).
 header_length(0, L) -> L * 4;
@@ -116,6 +130,7 @@ service(commands)  ->  3;
 service(firmware)  ->  9;
 service(ecall)     -> 10.
 
+subrecord(_, 0)             -> response;
 subrecord(auth, 1)          -> term_identify;
 
 subrecord(teledata, 16)     -> position;
@@ -156,10 +171,16 @@ combine_record([[{navigation, Data} | T1] | T], [RN | R],
                  [misc:compact_list(lists:reverse(SubRecord)) | Combined],
                  [iolist_to_binary(lists:reverse(SubRaws)) | Raws],
                  [{navigation, Data} | T1], [RN]);
+combine_record([[H | _] | T], [R | RT],
+               Combined, Raws,
+               [], []) when element(1, H) =/= auth ->
+  warning("no navigation service data before ~w (~w)", [H, R]),
+  combine_record(T, RT, Combined, Raws, [], []);
 combine_record([[{navigation_extra, Data} | T1] | T], [RN | R],
                Combined, Raws,
                SubRecord, SubRaws) ->
-  trace("adding extra navigation data"),
+  trace("adding extra navigation data to ~w", [SubRecord]),
+  trace("subraws: ~w", [SubRaws]),
   SR1 = [{navigation, Data} | T1],
   debug("sr1 ~w", [SR1]),
   SR2 = SR1 ++ SubRecord,

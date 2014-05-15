@@ -134,13 +134,18 @@ handle_call({data, []} = Data, From, #state{response = Answer} = State) ->
 %%--------------------------------------------------------------------
 %% in this case should process parsed data
 %%--------------------------------------------------------------------
-handle_call({egts_pt_routing, RawData, {_PRA, _RCA, _TTL, Data}},
+handle_call({egts_pt_routing = Type, RawData, {_PRA, _RCA, _TTL, Data}} = Packet,
             From,
             State) ->
-  emerg("routing packet"),
+  emerg("~w ~w", [Type, Packet]),
   <<_:9/binary, PT:?BYTE, _/binary>> = RawData,
   PacketType = ?T:packet_type(PT),
   handle_call({PacketType, RawData, Data}, From, State);
+handle_call({egts_pt_response = Type, _Raw, Parsed}, _From, State) ->
+  SF = proplists:get_value(service_frame, Parsed, <<>>),
+  {ok, SR} = ?T:parse({service, egts_pt_response, SF}),
+  warning("~w ~w", [Type, SR]),
+  {reply, ok, State, State#state.timeout};
 handle_call({Type, _RawData, Parsed},
             {TPid, _Tag},
             #state{timeout = Timeout, terminator = TPid} = State) ->

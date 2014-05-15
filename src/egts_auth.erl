@@ -1,11 +1,12 @@
 -module(egts_auth).
 
--export([
-  term_identify/1
-  ]).
+-export([term_identify/1]).
+-export([response/1]).
 
 -include("egts_binary_types.hrl").
 -include_lib("logger/include/log.hrl").
+
+response(Data) -> egts_service:parse(response, Data).
 
 term_identify(<<TID:?UINT, Opts:?BYTE, Else/binary>>) ->
   trace("term identify opts ~w, data ~s", [Opts, Else]),
