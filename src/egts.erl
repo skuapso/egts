@@ -260,10 +260,7 @@ handle_service_record(Record, #state{uin = undefined,
             proplists:get_value(imei, AuthData,
                                 proplists:get_value(terminal_id, AuthData));
           {_, _, _, Info} ->
-            case proplists:get_value(object_id, Info) of
-              [InfoUin] -> InfoUin;
-              InfoUin -> InfoUin
-            end
+            proplists:get_value(object_id, Info)
         end,
   true = is_integer(UIN),
   hooks:run(terminal_uin, [?MODULE, UIN], Timeout),

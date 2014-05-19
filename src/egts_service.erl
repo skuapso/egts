@@ -102,15 +102,16 @@ parse_header(Opts, Header) ->
   parse_header(Opts, Header, [], 0).
 
 parse_header(0, <<>>, Data, _N) ->
-  misc:compact_list(lists:reverse(Data));
+  lists:reverse(Data);
 parse_header(OptFlag, Header, Data, N) when (OptFlag band 1) =:= 0 ->
   parse_header(OptFlag bsr 1, Header, Data, N + 1);
 parse_header(OptFlag, <<DataBin:4/binary, Header/binary>>, Data, N) ->
   parse_header(OptFlag bsr 1, Header, [parse_header_field(N, DataBin) | Data], N + 1).
 
-parse_header_field(0, <<Sec:?UINT>>) -> {eventtime, Sec};
+parse_header_field(2, <<Sec:?UINT>>) ->
+  {recordtime, calendar:gregorian_seconds_to_datetime(63429523200 + Sec)};
 parse_header_field(1, <<EventID:?UINT>>) -> {event_id, EventID};
-parse_header_field(2, <<ObjectID:?UINT>>) -> {object_id, ObjectID}.
+parse_header_field(0, <<ObjectID:?UINT>>) -> {object_id, ObjectID}.
 
 parse_subrecord(Service, SubRecord, Data) ->
   M = list_to_atom("egts_" ++ atom_to_list(Service)),
