@@ -255,10 +255,17 @@ handle_service_record(Record, #state{uin = undefined,
                                      answer = RawData,
                                      terminator = TPid,
                                      timeout = Timeout} = State) ->
-  {auth, _, [{_, [{auth, AuthData}]}], _} = Record,
-  UIN = proplists:get_value(imei, AuthData,
-                            proplists:get_value(terminal_id, AuthData)),
-  true = (UIN =/= undefined),
+  UIN = case Record of
+          {auth, _, [{_, [{auth, AuthData}]}], _} ->
+            proplists:get_value(imei, AuthData,
+                                proplists:get_value(terminal_id, AuthData));
+          {_, _, _, Info} ->
+            case proplists:get_value(object_id, Info) of
+              [InfoUin] -> InfoUin;
+              InfoUin -> InfoUin
+            end
+        end,
+  true = is_integer(UIN),
   hooks:run(terminal_uin, [?MODULE, UIN], Timeout),
   {reply, ok, NewState, Timeout} = handle_call({raw_data, RawData}, {TPid, undefined},
                           State#state{uin = UIN, answer = <<>>}),
