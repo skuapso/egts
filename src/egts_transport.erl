@@ -94,13 +94,16 @@ parse(<<
     Else
   };
 parse(<<_:24, HL:?BYTE, _:8, FDL:?USHORT, _/binary>> = Data)
-    when byte_size(Data) < (HL + FDL + 2) ->
+    when FDL > 0, ((HL =:= 16#10) or (HL =:= 16#0b)), byte_size(Data) < (HL + FDL + 2) ->
   debug("incomplete data ~w, header length ~w, frame length ~w", [Data, HL, FDL]),
   {[], <<>>, Data};
 parse(<<_:24, HL:?BYTE, _:8, FDL:?USHORT, _/binary>> = Data)
-    when FDL =:= 0, ((HL =:= 16#10) or (HL =:= 16#0a)), byte_size(Data) < HL ->
+    when FDL =:= 0, ((HL =:= 16#10) or (HL =:= 16#0b)), byte_size(Data) < HL ->
   debug("incomplete data ~w, header length ~w, frame length ~w", [Data, HL, FDL]),
   {[], <<>>, Data};
+parse(<<_:24, HL:?BYTE, _/binary>> = Data)
+    when HL =:= 16#10; HL =:= 16#0b ->
+  parse(Data, <<>>, []);
 parse(<<
         PRV:?BYTE, SKID:?BYTE,
         PRF:2, 0:1, ENA:2, CMP:1, PR:2,
@@ -109,7 +112,7 @@ parse(<<
         FDL:?USHORT, PID:?USHORT, PT:?BYTE,
         _/binary
       >> = Data
-     ) ->
+     ) when HL =/= 16#0a, HL =/= 16#10 ->
   warning("wrong length; got ~w(~w/~w)", [byte_size(Data), {header, HL}, {service, FDL}]),
   debug("prv:  ~w(~w)", [PRV, 16#01]),
   debug("skid: ~w(~w)", [SKID, {undef, 0}]),
@@ -122,7 +125,19 @@ parse(<<
   debug("fdl:  ~w(~w)", [FDL, {service_frame_length}]),
   debug("pid:  ~w(~w)", [PID, {msg_id}]),
   debug("pt:   ~w(~w)", [PT, {packet_type, 0, 1, 2}]),
-  {badlen, {data, byte_size(Data)}, {header, HL}, {frame, FDL}}.
+  {badlen, {data, byte_size(Data)}, {header, HL}, {frame, FDL}};
+parse(Data) -> {[], <<>>, Data}.
+
+parse(<<>>, Raw, Parsed) ->
+  {lists:reverse(Parsed), Raw, <<>>};
+parse(Data, Raw, Parsed) ->
+  {Data1, Rest} = get_transport_data(Data),
+  case parse(Data1) of
+    {[], <<>>, Data1} ->
+      {lists:reverse(Parsed), Raw, Data1};
+    {[P], R, <<>>} ->
+      parse(Rest, <<Raw/binary, R/binary>>, [P | Parsed])
+  end.
 
 get_service_data(L, Data, Offset) ->
   <<_:Offset/binary, Else/binary>> = Data,
@@ -138,3 +153,15 @@ get_service_data(L, Data) ->
 %  debug("records ~w", [Records]),
 %  {Records, Else}.
   {SFRD, Else}.
+
+get_transport_data(<<_:24, HL:?BYTE, _:8, FDL:?USHORT, _/binary>> = Data)
+  when FDL > 0, byte_size(Data) >= (HL + FDL + 2) ->
+  L = HL + FDL + 2,
+  <<TD:L/binary, Rest/binary>> = Data,
+  {TD, Rest};
+get_transport_data(<<_:24, HL:?BYTE, _:8, 0:?USHORT, _/binary>> = Data)
+  when byte_size(Data) >= HL ->
+  <<TD:HL/binary, Rest/binary>> = Data,
+  {TD, Rest};
+get_transport_data(Data) ->
+  {<<>>, Data}.
