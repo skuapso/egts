@@ -274,7 +274,19 @@ handle_service_record({Type, _, Packets, Info} = Record, #state{uin = UIN,
      {RawPacket, Parsed} ->
        Type1 = packet_type(Type, Parsed),
        debug("type: ~w", [Type1]),
-       hooks:run(terminal_packet, [?MODULE, UIN, Type1, RawPacket, Parsed], Timeout);
+       Parsed1 = case Parsed of
+                   [{navigation, N} | T] ->
+                     case proplists:get_value(used, N) of
+                       undefined ->
+                         case proplists:get_value(valid, N) of
+                           1 -> [{navigation, [{used, 4} | N]} | T];
+                           _ -> [{navigation, N} | T]
+                         end;
+                       _ -> [{navigation, N} | T]
+                     end;
+                   Parsed -> Parsed
+                 end,
+       hooks:run(terminal_packet, [?MODULE, UIN, Type1, RawPacket, Parsed1], Timeout);
      Else -> warning("packet wrong format ~w", [Else])
    end
    || Packet <- Packets],
