@@ -105,26 +105,15 @@ parse(<<_:24, HL:?BYTE, _/binary>> = Data)
     when HL =:= 16#10; HL =:= 16#0b ->
   parse(Data, <<>>, []);
 parse(<<
-        PRV:?BYTE, SKID:?BYTE,
-        PRF:2, 0:1, ENA:2, CMP:1, PR:2,
+        _:24,
         HL:?BYTE,
-        HE:?BYTE,
-        FDL:?USHORT, PID:?USHORT, PT:?BYTE,
+        _:8,
+        FDL:?USHORT,
         _/binary
       >> = Data
      ) when HL =/= 16#0a, HL =/= 16#10 ->
-  warning("wrong length; got ~w(~w/~w)", [byte_size(Data), {header, HL}, {service, FDL}]),
-  debug("prv:  ~w(~w)", [PRV, 16#01]),
-  debug("skid: ~w(~w)", [SKID, {undef, 0}]),
-  debug("prf:  ~w(~w)", [PRF, 2#00]),
-  debug("ena:  ~w(~w)", [ENA, {undef, 0}]),
-  debug("cmp:  ~w(~w)", [CMP, {undef, 0}]),
-  debug("pr:   ~w(~w)", [PR, {priority}]),
-  debug("hl:   ~w(~w)", [HL, {header_length, 16#10, 16#0b}]),
-  debug("he:   ~w(~w)", [HE, {undef, 0}]),
-  debug("fdl:  ~w(~w)", [FDL, {service_frame_length}]),
-  debug("pid:  ~w(~w)", [PID, {msg_id}]),
-  debug("pt:   ~w(~w)", [PT, {packet_type, 0, 1, 2}]),
+  warning("wrong length ~w: ~w(~w/~w)", [Data, byte_size(Data), {header, HL}, {service, FDL}]),
+  print_header(Data),
   {badlen, {data, byte_size(Data)}, {header, HL}, {frame, FDL}};
 parse(Data) -> {[], <<>>, Data}.
 
@@ -134,7 +123,7 @@ parse(Data, Raw, Parsed) ->
   {Data1, Rest} = get_transport_data(Data),
   case parse(Data1) of
     {[], <<>>, Data1} ->
-      {lists:reverse(Parsed), Raw, Data1};
+      {lists:reverse(Parsed), Raw, <<Data1/binary, Rest/binary>>};
     {[P], R, <<>>} ->
       parse(Rest, <<Raw/binary, R/binary>>, [P | Parsed])
   end.
@@ -149,9 +138,6 @@ get_service_data(L, Data) ->
   <<SFRD:L/binary, SFRCS:?USHORT, Else/binary>> = Data,
   debug("service data: ~s, crc: ~w", [SFRD, SFRCS]),
   true = egts:check_crc16(SFRCS, SFRD),
-%  {ok, Records} = egts_service:parse(SFRD),
-%  debug("records ~w", [Records]),
-%  {Records, Else}.
   {SFRD, Else}.
 
 get_transport_data(<<_:24, HL:?BYTE, _:8, FDL:?USHORT, _/binary>> = Data)
@@ -165,3 +151,24 @@ get_transport_data(<<_:24, HL:?BYTE, _:8, 0:?USHORT, _/binary>> = Data)
   {TD, Rest};
 get_transport_data(Data) ->
   {<<>>, Data}.
+
+print_header(<<
+               PRV:?BYTE, SKID:?BYTE,
+               PRF:2, 0:1, ENA:2, CMP:1, PR:2,
+               HL:?BYTE,
+               HE:?BYTE,
+               FDL:?USHORT, PID:?USHORT, PT:?BYTE,
+               _/binary
+             >>
+            ) ->
+  warning("prv:  ~w(~w)", [PRV, 16#01]),
+  warning("skid: ~w(~w)", [SKID, {undef, 0}]),
+  warning("prf:  ~w(~w)", [PRF, 2#00]),
+  warning("ena:  ~w(~w)", [ENA, {undef, 0}]),
+  warning("cmp:  ~w(~w)", [CMP, {undef, 0}]),
+  warning("pr:   ~w(~w)", [PR, {priority}]),
+  warning("hl:   ~w(~w)", [HL, {header_length, 16#10, 16#0b}]),
+  warning("he:   ~w(~w)", [HE, {undef, 0}]),
+  warning("fdl:  ~w(~w)", [FDL, {service_frame_length}]),
+  warning("pid:  ~w(~w)", [PID, {msg_id}]),
+  warning("pt:   ~w(~w)", [PT, {packet_type, 0, 1, 2}]).

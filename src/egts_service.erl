@@ -95,7 +95,7 @@ parse_records(SST, <<Type:?BYTE, L:?USHORT, Data:L/binary, Else/binary>>, Record
       parse_records(SST, Else, Records, Raws);
     SRData ->
       debug("subrecord ~w", [{Data, SRData}]),
-      parse_records(SST, Else, [SRData | Records], [Data | Raws])
+      parse_records(SST, Else, [SRData | Records], [<<Type:?BYTE, L:?USHORT, Data/binary>> | Raws])
   end.
 
 parse_header(Opts, Header) ->
