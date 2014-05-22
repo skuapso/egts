@@ -175,7 +175,7 @@ combine_record([[{navigation, Data} | T1] | T], [RN | R],
 combine_record([[H | _] | T], [R | RT],
                Combined, Raws,
                [], []) when element(1, H) =/= auth ->
-  warning("no navigation service data before ~w (~w)", [H, R]),
+  debug("no navigation service data before ~w (~w)", [H, R]),
   combine_record(T, RT, Combined, Raws, [], []);
 combine_record([[{navigation_extra, Data} | T1] | T], [RN | R],
                Combined, Raws,

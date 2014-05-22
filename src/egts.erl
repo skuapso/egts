@@ -65,13 +65,13 @@ enter_loop(Socket) ->
 data(_Pid, [], <<>>) ->
   ok;
 data(Pid, Packets, RawData) ->
-  gen_server:call(Pid, {raw_data, RawData}),
+  gen_server:call(Pid, {raw_data, RawData}, ?TIMEOUT),
   data(Pid, Packets).
 
 data(Pid, []) ->
-  gen_server:call(Pid, {data, []});
+  gen_server:call(Pid, {data, []}, ?TIMEOUT);
 data(Pid, [Packet | Packets]) ->
-  gen_server:call(Pid, Packet),
+  gen_server:call(Pid, Packet, ?TIMEOUT),
   data(Pid, Packets).
 
 packet_type(N) ->
