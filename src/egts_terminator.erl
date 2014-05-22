@@ -28,7 +28,7 @@
 -record(state, {socket, handler, incomplete = <<>>, uin}).
 
 -define(MAX_IN_SIZE, 65535).
--define(MAX_OUT_SIZE, 1400).
+-define(MAX_OUT_SIZE,65535).
 -define(TCP_OPTIONS, [{active, true}]).
 -define(T, egts).
 -define(TR, egts_transport).
