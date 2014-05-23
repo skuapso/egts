@@ -94,16 +94,16 @@ parse(<<
     Else
   };
 parse(<<_:24, HL:?BYTE, _:8, FDL:?USHORT, _/binary>> = Data)
-    when FDL > 0, ((HL =:= 16#10) or (HL =:= 16#0b)), byte_size(Data) < (HL + FDL + 2) ->
-  debug("incomplete data ~w, header length ~w, frame length ~w", [Data, HL, FDL]),
-  {[], <<>>, Data};
-parse(<<_:24, HL:?BYTE, _:8, FDL:?USHORT, _/binary>> = Data)
-    when FDL =:= 0, ((HL =:= 16#10) or (HL =:= 16#0b)), byte_size(Data) < HL ->
+    when ((HL =:= 16#10) or (HL =:= 16#0b)), (
+                                    ((FDL>0) and (byte_size(Data) < (HL + FDL + 2)))
+                                    or ((FDL=:=0) and (byte_size(Data) < HL))) ->
   debug("incomplete data ~w, header length ~w, frame length ~w", [Data, HL, FDL]),
   {[], <<>>, Data};
 parse(<<_:24, HL:?BYTE, _/binary>> = Data)
     when HL =:= 16#10; HL =:= 16#0b ->
-  parse(Data, <<>>, []);
+  {TrFrame, Rest} = get_transport_data(Data),
+  {P, R, Incomplete} = parse(TrFrame),
+  {P, R, <<Incomplete/binary, Rest/binary>>};
 parse(<<
         _:24,
         HL:?BYTE,
@@ -116,17 +116,6 @@ parse(<<
   print_header(Data),
   {badlen, {data, byte_size(Data)}, {header, HL}, {frame, FDL}};
 parse(Data) -> {[], <<>>, Data}.
-
-parse(<<>>, Raw, Parsed) ->
-  {lists:reverse(Parsed), Raw, <<>>};
-parse(Data, Raw, Parsed) ->
-  {Data1, Rest} = get_transport_data(Data),
-  case parse(Data1) of
-    {[], <<>>, Data1} ->
-      {lists:reverse(Parsed), Raw, <<Data1/binary, Rest/binary>>};
-    {[P], R, <<>>} ->
-      parse(Rest, <<Raw/binary, R/binary>>, [P | Parsed])
-  end.
 
 get_service_data(L, Data, Offset) ->
   <<_:Offset/binary, Else/binary>> = Data,

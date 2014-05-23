@@ -171,6 +171,10 @@ handle_info({tcp, Socket, TcpData}, #state{
   debug("packets: ~w", [Packets]),
   debug("incomlete: ~w", [Incomplete]),
   ?T:data(Handler, Packets, Parsed),
+  if
+    Packets =/= [], Incomplete =/= <<>> -> self() ! {tcp, Socket, <<>>};
+    true -> ok
+  end,
   {noreply, S#state{incomplete = Incomplete}};
 handle_info({tcp_closed, Socket}, #state{socket = Socket} = State) ->
   trace("connection closed"),
