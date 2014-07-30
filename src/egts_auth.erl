@@ -1,6 +1,6 @@
 -module(egts_auth).
 
--export([term_identify/1]).
+-export([term_identify/2]).
 -export([response/1]).
 
 -include("egts_binary_types.hrl").
@@ -8,36 +8,36 @@
 
 response(Data) -> egts_service:parse(response, Data).
 
-term_identify(<<TID:?UINT, Opts:?BYTE, Else/binary>>) ->
+term_identify(P, <<TID:?UINT, Opts:?BYTE, Else/binary>>) ->
   trace("term identify opts ~w, data ~s", [Opts, Else]),
-  Terms = term_identify(Opts, Else, 0),
-  [{auth, [{terminal_id, TID} | Terms]}].
+  term_identify(P#{type => authentication, terminal_id => TID}, Opts, Else, 0).
 
-term_identify(0, _, _) ->
-  [];
-term_identify(Opts, Data, N) when (Opts band 1 =/= 1) ->
-  term_identify(Opts bsr 1, Data, N + 1);
-term_identify(Opts, <<Val:?USHORT, Else/binary>>, N)
+term_identify(P, 0, _, _) ->
+  debug("identify: ~w", [P]),
+  P;
+term_identify(P, Opts, Data, N) when (Opts band 1 =/= 1) ->
+  term_identify(P, Opts bsr 1, Data, N + 1);
+term_identify(P, Opts, <<Val:?USHORT, Else/binary>>, N)
     when N =:= 0 ->
-  [{hdid, Val}] ++ term_identify(Opts bsr 1, Else, N + 1);
-term_identify(Opts, <<Val:15/binary, Else/binary>>, N)
+  term_identify(P#{hdid => Val}, Opts bsr 1, Else, N + 1);
+term_identify(P, Opts, <<Val:15/binary, Else/binary>>, N)
     when N =:= 1 ->
-  [{imei, binary_to_integer(Val)}] ++ term_identify(Opts bsr 1, Else, N + 1);
-term_identify(Opts, <<Val:16/binary, Else/binary>>, N)
+  term_identify(P#{imei => binary_to_integer(Val)}, Opts bsr 1, Else, N + 1);
+term_identify(P, Opts, <<Val:16/binary, Else/binary>>, N)
     when N =:= 2 ->
-  [{imsi, Val}] ++ term_identify(Opts bsr 1, Else, N + 1);
-term_identify(Opts, <<Val:3/binary, Else/binary>>, N)
+  term_identify(P#{imsi => Val}, Opts bsr 1, Else, N + 1);
+term_identify(P, Opts, <<Val:3/binary, Else/binary>>, N)
     when N =:= 3 ->
-  [{lngc, Val}] ++ term_identify(Opts bsr 1, Else, N + 1);
-term_identify(Opts, Else, N)
+  term_identify(P#{lngc => Val}, Opts bsr 1, Else, N + 1);
+term_identify(P, Opts, Else, N)
     when N =:= 4 ->
-  [{ssra, 1}] ++ term_identify(Opts bsr 1, Else, N + 1);
-term_identify(Opts, <<_:4, MCC:10, MNC:10, Else/binary>>, N)
+  term_identify(P#{ssra => 1}, Opts bsr 1, Else, N + 1);
+term_identify(P, Opts, <<_:4, MCC:10, MNC:10, Else/binary>>, N)
     when N =:= 5 ->
-  [{mcc, MCC} + {mnc, MNC}] ++ term_identify(Opts bsr 1, Else, N + 1);
-term_identify(Opts, <<Val:?USHORT, Else/binary>>, N)
+  term_identify(P#{mcc => MCC, mnc => MNC}, Opts bsr 1, Else, N + 1);
+term_identify(P, Opts, <<Val:?USHORT, Else/binary>>, N)
     when N =:= 6 ->
-  [{bs, Val}] ++ term_identify(Opts bsr 1, Else, N + 1);
-term_identify(Opts, <<Val:15/binary, Else/binary>>, N)
+  term_identify(P#{bs => Val}, Opts bsr 1, Else, N + 1);
+term_identify(P, Opts, <<Val:15/binary, Else/binary>>, N)
     when N =:= 7 ->
-  [{msisdn, Val}] ++ term_identify(Opts bsr 1, Else, N + 1).
+  term_identify(P#{msisdn => Val}, Opts bsr 1, Else, N + 1).

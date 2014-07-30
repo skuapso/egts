@@ -44,15 +44,17 @@ response({PID, Data}) ->
 
 parse(<<
         PRV:?BYTE, SKID:?BYTE,
-        PRF:2, 0:1, ENA:2, CMP:1, PR:2,
+        PRF:2, RTE:1, ENA:2, CMP:1, PR:2,
         HL:?BYTE,
         HE:?BYTE,
         FDL:?USHORT, PID:?USHORT, PT:?BYTE,
+        HCS:?BYTE,
         _/binary
       >> = Data
      )
     when
     byte_size(Data) =:= (HL + FDL + 2),
+    RTE =:= 0,
     PRV =:= 16#01, PRF =:= 2#00, HL =:= 16#0b,
     % не определены в данной версии протокола
     ENA =:= 0, CMP =:= 0, SKID =:= 0, HE =:= 0
@@ -69,20 +71,26 @@ parse(<<
   };
 parse(<<
         PRV:?BYTE, SKID:?BYTE,
-        PRF:2, 1:1, ENA:2, CMP:1, PR:2,
+        PRF:2, RTE:1, ENA:2, CMP:1, PR:2,
         HL:?BYTE,
         HE:?BYTE,
         FDL:?USHORT, PID:?USHORT, _PT:?BYTE,
         PRA:?USHORT, RCA:?USHORT, TTL:?BYTE,
+        HCS:?BYTE,
         _/binary
       >> = Data
      )
     when
     byte_size(Data) =:= (HL + FDL + 2),
+    RTE =:= 1,
     PRV =:= 16#01, PRF =:= 2#00, HL =:= 16#10,
     % не определены в данной версии протокола
     ENA =:= 0, CMP =:= 0, SKID =:= 0, HE =:= 0
     ->
+  <<Header:16#0a/binary, HCS:?BYTE, _/binary>> = Data,
+  debug("header: ~w, crc: ~w", [Header, HCS]),
+  debug("routing packet"),
+  true = egts:check_crc8(HCS, Header),
   {SFRD, Else} = get_service_data(FDL, Data, 16#10),
   {
     [{

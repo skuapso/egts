@@ -1,17 +1,17 @@
 -module(egts_teledata).
 
--export([position/1]).
--export([position_ext/1]).
--export([sensors/1]).
--export([counters/1]).
--export([state/1]).
--export([loopin/1]).
--export([abs_digital/1]).
--export([abs_analog/1]).
--export([abs_counter/1]).
--export([abs_loopin/1]).
--export([lls/1]).
--export([passengers_counters/1]).
+-export([position/2]).
+-export([position_ext/2]).
+-export([sensors/2]).
+-export([counters/2]).
+-export([state/2]).
+-export([loopin/2]).
+-export([abs_digital/2]).
+-export([abs_analog/2]).
+-export([abs_counter/2]).
+-export([abs_loopin/2]).
+-export([lls/2]).
+-export([passengers_counters/2]).
 -export([response/1]).
 
 -include("egts_binary_types.hrl").
@@ -19,7 +19,7 @@
 
 response(Data) -> egts_service:parse(response, Data).
 
-position(<<
+position(P, <<
         NTM:?UINT,
         Lat:?UINT,
         Lon:?UINT,
@@ -33,91 +33,93 @@ position(<<
         Else/binary>>) ->
   <<SPD:14>> = <<SPDHBits:6, SPDLBits:8>>,
 
-  Navigation = [
-      {eventtime, calendar:gregorian_seconds_to_datetime(63429523200 + NTM)},
-      {latitude,  sign(LAHS)*Lat*90/16#ffffffff},
-      {longitude, sign(LOHS)*Lon*180/16#ffffffff},
-      {parking, MV bxor 1},
-      {offline, BB},
-      {fix, FIX},
-      {cs, CS},
-      {valid, VLD},
-      {speed, SPD/10},
-      {course, Dir + 256 * DIRH},
-      {odometer, ODM},
-      {event, SRC}
-      ],
-  OptData = position_opt_data(ALTE, ALTS, SRC, Else),
-  debug("navigation data: ~w", [Navigation]),
-  Set = case misc:bits2tuples(DIn) of
-    [] -> [];
-    DigitalIn -> [{set, [{digital_in, DigitalIn}]}]
-  end,
-  [{navigation, Navigation ++ OptData} | Set].
+  P1 = P#{
+    eventtime => calendar:gregorian_seconds_to_datetime(63429523200 + NTM),
+    location => #{
+      latitude => sign(LAHS)*Lat*90/16#ffffffff,
+      longitude=> sign(LOHS)*Lon*180/16#ffffffff},
+    parking => MV bxor 1,
+    offline => BB,
+    fix => FIX,
+    cs => CS,
+    valid => VLD,
+    speed => SPD/10,
+    course => Dir + 256 * DIRH,
+    odometer => ODM,
+    event => SRC},
+  P2 = position_opt_data(P1, ALTE, ALTS, SRC, Else),
+  debug("navigation data: ~w", [P2]),
+  misc:update_path(
+    [digital, in],
+    misc:bits2map(8, DIn),
+    P2).
 
-position_opt_data(1, Sign, SRC, <<Alt:?UINT3, Rest/binary>>) ->
-  [{altitude, sign(Sign) * Alt} | src_data(SRC, Rest)];
-position_opt_data(0, _, SRC, Data) ->
-  src_data(SRC, Data).
+position_opt_data(P, 1, Sign, SRC, <<Alt:?UINT3, Rest/binary>>) ->
+  src_data(
+    misc:update_path(
+      [location, altitude],
+      sign(Sign) * Alt,
+      P),
+    SRC,
+    Rest);
+position_opt_data(P, 0, _, SRC, Data) ->
+  src_data(P, SRC, Data).
 
-src_data(_, <<>>) -> [];
-src_data(_SRC, <<SRCD:?SHORT>>) -> [{src_data, SRCD}].
+src_data(P, _, <<>>) -> P;
+src_data(P, _SRC, <<SRCD:?SHORT>>) -> P#{src_data => SRCD}.
 
-position_ext(<<_:3, Bits:5, Rest/binary>>) ->
-  [{navigation_extra, position_ext(Bits, Rest, [], 1)}].
-position_ext(0, <<>>, Parsed, _N) ->
-  lists:reverse(Parsed);
-position_ext(0, Data, Parsed, _N) ->
+position_ext(P, <<_:3, Bits:5, Rest/binary>>) ->
+  position_ext(P, Bits, Rest, 1).
+position_ext(P, 0, <<>>, _N) ->
+  P;
+position_ext(P, 0, Data, _N) ->
   warning("unparsed data ~s", [Data]),
-  lists:reverse(Parsed);
-position_ext(Bits, <<Val:?USHORT, Rest/binary>>, Parsed, 1 = N) when Bits band 1 =:= 1 ->
-  H = {vdop, Val},
-  position_ext(Bits bsr 1, Rest, [H | Parsed], N + 1);
-position_ext(Bits, <<Val:?USHORT, Rest/binary>>, Parsed, 2 = N) when Bits band 1 =:= 1 ->
-  H = {hdop, Val},
-  position_ext(Bits bsr 1, Rest, [H | Parsed], N + 1);
-position_ext(Bits, <<Val:?USHORT, Rest/binary>>, Parsed, 3 = N) when Bits band 1 =:= 1 ->
-  H = {pdop, Val},
-  position_ext(Bits bsr 1, Rest, [H | Parsed], N + 1);
-position_ext(Bits, <<Val:?BYTE, Rest/binary>>, Parsed, 4 = N) when Bits band 1 =:= 1 ->
-  H = {used, Val},
-  position_ext(Bits bsr 1, Rest, [H | Parsed], N + 1);
-position_ext(Bits, <<Val:?USHORT, Rest/binary>>, Parsed, 5 = N) when Bits band 1 =:= 1 ->
-%  H = {navigation_systems, nav_systems(Val)},
-  H = {navigation_systems, Val},
-  position_ext(Bits bsr 1, Rest, [H | Parsed], N + 1);
-position_ext(Bits, BinData, Parsed, N) ->
-  position_ext(Bits bsr 1, BinData, Parsed, N + 1).
+  P;
+position_ext(P, Bits, <<Val:?USHORT, Rest/binary>>, 1 = N) when Bits band 1 =:= 1 ->
+  position_ext(P#{vdop => Val}, Bits bsr 1, Rest, N + 1);
+position_ext(P, Bits, <<Val:?USHORT, Rest/binary>>, 2 = N) when Bits band 1 =:= 1 ->
+  position_ext(P#{hdop => Val} ,Bits bsr 1, Rest, N + 1);
+position_ext(P, Bits, <<Val:?USHORT, Rest/binary>>, 3 = N) when Bits band 1 =:= 1 ->
+  position_ext(P#{pdop => Val}, Bits bsr 1, Rest, N + 1);
+position_ext(P, Bits, <<Val:?BYTE, Rest/binary>>, 4 = N) when Bits band 1 =:= 1 ->
+  position_ext(P#{used => Val}, Bits bsr 1, Rest, N + 1);
+position_ext(P, Bits, <<Val:?USHORT, Rest/binary>>, 5 = N) when Bits band 1 =:= 1 ->
+  position_ext(P#{navigation_systems => nav_systems(Val)}, Bits bsr 1, Rest, N + 1);
+position_ext(P, Bits, BinData, N) ->
+  position_ext(P, Bits bsr 1, BinData, N + 1).
 
-sensors(<<DInSensorsBl:8, DOutSensors:8, ASensors:8, Else/binary>>) ->
-  DOut = case misc:bits2tuples(DOutSensors) of
-    [] -> [];
-    A  -> [{digital_out, A}]
-  end,
-  debug("digital out ~w", [DOut]),
-  {DIn, Bin1} = digital_in(DInSensorsBl, Else),
-  debug("digital in ~w", [DIn]),
-  Analog = analog(ASensors, Bin1),
-  debug("analog ~w", [Analog]),
-  [{set, DIn ++ DOut ++ Analog}].
+sensors(P, <<DInSensorsBl:8, DOutSensors:8, ASensors:8, Else/binary>>) ->
+  P1 = case misc:bits2map(8, DOutSensors) of
+           #{} -> P;
+           A  -> misc:update_path([digital, out], A, P)
+         end,
+  {P2, Bin1} = digital_in(P1, DInSensorsBl, Else),
+  analog(P2, ASensors, Bin1).
 
-counters(<<B:8, Else/binary>>) -> counters(B, Else, [], 1).
-counters(0, <<>>, Parsed, _N) ->
-  [{set, [{counter, lists:reverse(Parsed)}]}];
-counters(I, Data, Parsed, N) when I band 1 =/= 1 ->
-  counters(I bsr 1, Data, Parsed, N + 1);
-counters(I, <<C:?UINT3, Else/binary>>, Parsed, N) ->
-  counters(I bsr 1, Else, [{N, C} | Parsed], N + 1).
+counters(P, <<B:8, Else/binary>>) -> counters(P, B, Else, 1).
+counters(P, 0, <<>>, _N) ->
+  P;
+counters(P, I, Data, N) when I band 1 =/= 1 ->
+  counters(P, I bsr 1, Data, N + 1);
+counters(P, I, <<C:?UINT3, Else/binary>>, N) ->
+  counters(
+    misc:update_path(
+      [counter, N],
+      C,
+      P),
+    I bsr 1,
+    Else,
+    N + 1).
 
-state(<<ST:?BYTE, MPSV:?BYTE, BBV:?BYTE, IBV:?BYTE, _:5, NMS:1, BBU:1, IBU:1>>) ->
-  [
-    {navigation_extra, [{state, state(ST)}]},
-    {set, [
-        {boolean_sensor,
-         [{navigation, NMS}, {backup_battery_using, BBU}, {internal_battery_using, IBU}]},
-        {float_sensor, [{main_power, MPSV/10}, {backup_battery, BBV/10}, {internal_battery, IBV/10}]}
-    ]}
-  ];
+state(P, <<ST:?BYTE, MPSV:?BYTE, BBV:?BYTE, IBV:?BYTE, _:5, NMS:1, BBU:1, IBU:1>>) ->
+  P#{
+    state => state(ST),
+    using_navigation => NMS,
+    using_backup_battery => BBU,
+    using_internal_battery => IBU,
+    external_power => MPSV/10,
+    backup_battery => BBV/10,
+    internal_battery => IBV/10}.
 state(0)  -> passive;
 state(1)  -> era;
 state(2)  -> active;
@@ -127,88 +129,132 @@ state(5)  -> testing;
 state(6)  -> service;
 state(7)  -> firmware.
 
-loopin(<<I:8, Data/binary>>) -> loopin(Data, I, [], 0).
-loopin(BinData, 0, Data, _N) when (BinData =:= <<>>) or (BinData =:= <<0:4>>) ->
-  case(Data) of
-    [] -> [];
-    Data -> [{set, [{loop_in, lists:reverse(Data)}]}]
-  end;
-
-loopin(Unparsed, 0, Data, N) ->
+loopin(P, <<I:8, Data/binary>>) -> loopin(P, Data, I, 0).
+loopin(P, BinData, 0, _N) when (BinData =:= <<>>) or (BinData =:= <<0:4>>) ->
+  P;
+loopin(P, Unparsed, 0, N) ->
   warning("unparsed data in loopin ~w, N ~w", [Unparsed, N]),
-  loopin(<<>>, 0, Data, N);
-loopin(<<LIS:4, Else/binary>> = BinData, I, Data, N) when I band 1 =:= 1, LIS =/= 0 ->
+  loopin(P, <<>>, 0, N);
+loopin(P, <<LIS:4, Else/binary>> = BinData, I, N) when I band 1 =:= 1 ->
   trace("parsing ~w", [BinData]),
-  loopin(Else, I bsr 1, [{N, LIS} | Data], N + 1);
-loopin(BinData, I, Data, N) ->
+  loopin(
+    misc:update_path(
+      [loop, in, N],
+      LIS,
+      P),
+    Else,
+    I bsr 1,
+    N + 1);
+loopin(P, BinData, I, N) ->
   trace("parsing ~w", [BinData]),
-  loopin(BinData, I bsr 1, Data, N + 1).
+  loopin(P, BinData, I bsr 1, N + 1).
 
-abs_digital(<<_:4, 0:4, _:8>>) -> [];
-abs_digital(<<Low:4, _:4, High:8>>) ->
+abs_digital(P, <<Low:4, Val:4, High:8>>) ->
   <<N:?USHORT>> = <<0:4, Low:4, High:8>>,
-  [{set, {digital_in, {N, 1}}}].
+  misc:update_path(
+    [digital, in, N],
+    if Val =:= 0 -> 0; true -> 1 end,
+    P).
 
-abs_analog(<<_:?BYTE, 0:24>>) -> [];
-abs_analog(<<N:?BYTE, Val:3/binary>>) ->
-  [{set, {analog, {N, Val}}}].
+abs_analog(P, <<N:?BYTE, Val:?FLOAT>>) ->
+  misc:update_path(
+    [analog, in, N],
+    Val/100,
+    P).
 
-abs_counter(<<_:?BYTE, 0:24>>) -> [];
-abs_counter(<<N:?BYTE, Val:?UINT3>>) ->
-  [{set, {counter, {N, Val}}}].
+abs_counter(P, <<N:?BYTE, Val:?UINT3>>) ->
+  misc:update_path(
+    [counter, N],
+    Val,
+    P).
 
-abs_loopin(<<_:4, 0:4, _:8>>) -> [];
-abs_loopin(<<Low:4, Val:4, High:8>>) ->
+abs_loopin(P, <<Low:4, Val:4, High:8>>) ->
   <<N:?USHORT>> = <<0:4, Low:4, High:8>>,
-  [{set, {loop_in, {N, Val}}}].
+  misc:update_path(
+    [loop, in, N],
+    Val,
+    P).
 
-lls(<<>>) -> [];
-lls(<<_:1, 1:1, _/binary>>) ->
+lls(P, <<>>) -> P;
+lls(P, <<_:1, 1:1, _/binary>>) ->
   warning("lls reading error"),
-  [];
-lls(<<_:1, 0:1, 0:2, 0:1, _N:3, _Port:?USHORT, 0:?UINT>>) -> [];
-lls(<<_:1, 0:1, 0:2, 0:1, N:3, Port:?USHORT, Val:?UINT>>) ->
-  [{set, [{lls, [{N, Val}]}, {lls_port, [{Port, Val}]}]}];
-lls(Data) -> warning("unsupported lls data ~s", [Data]), [].
+  P;
+lls(P, <<_:1, 0:1, 0:2, 0:1, N:3, Port:?USHORT, Val:?UINT>>) ->
+  misc:update_path(
+    [lls_port, N],
+    Port,
+    misc:update_path(
+      [lls, N],
+      Val,
+      P));
+lls(P, Data) -> warning("unsupported lls data ~s", [Data]), P.
 
-passengers_counters(<<>>) -> [];
-passengers_counters(<<_:7, 1:1, DPR:?BYTE, DRL:?BYTE, Port:?USHORT, Rest/binary>>) ->
-  [{passengers_bin, [{doors_present, DPR}, {doors_released, DRL}, {port, Port}, {data, Rest}]}];
-passengers_counters(<<_:7, 0:1, DPR:?BYTE, DRL:?BYTE, Port:?USHORT, Rest/binary>>) ->
-  Info = {passengers, [{doors_present, DPR}, {doors_release, DRL}, {port, Port}]},
-  [Info, {set, passengers_counters(DPR, Rest, [], 1)}].
-passengers_counters(0, <<>>, Parsed, _N) -> lists:reverse(Parsed);
-passengers_counters(Bits, <<In:?BYTE, Out:?BYTE, Rest/binary>>, Parsed, N)
+passengers_counters(P, _Data) -> warning("not parsed passengers counter"), P;
+passengers_counters(P, <<>>) -> P;
+passengers_counters(P, <<_:7, 1:1, DPR:?BYTE, DRL:?BYTE, Port:?USHORT, Rest/binary>>) ->
+  misc:update_path(
+    [passenges_bin, Port],
+    #{doors_presented => DPR,
+      doors_released => DRL,
+      data => Rest},
+    P);
+passengers_counters(P, <<_:7, 0:1, DPR:?BYTE, DRL:?BYTE, Port:?USHORT, Rest/binary>>) ->
+  P1 = misc:update_path(
+         [passengers, Port],
+         #{doors_presented => DPR,
+           doors_released => DRL},
+         P),
+  passengers_counters(P1, Port, DPR, Rest).
+passengers_counters(P, _Port, 0, <<>>) -> P;
+passengers_counters(P, Port, Bits, <<In:?BYTE, Out:?BYTE, Rest/binary>>)
     when Bits band 1 =:= 1 ->
-  passengers_counters(Bits bsr 1, Rest,
-                      [{passengers_in, {N, In}}, {passengers_out, {N, Out}} | Parsed], N + 1);
-passengers_counters(Bits, Data, Parsed, N) ->
-  passengers_counters(Bits bsr 1, Data, Parsed, N + 1).
+  passengers_counters(
+    misc:update_path(
+      [passengers, Port, in],
+      In,
+      misc:update_path(
+        [passengers, Port, out],
+        Out,
+        P)),
+    Port,
+    Bits bsr 1,
+    Rest);
+passengers_counters(P, Port, Bits, Data) ->
+  passengers_counters(P, Port, Bits bsr 1, Data).
 
 %% internal functions
 sign(0) ->  1;
 sign(1) -> -1.
 
 
-digital_in(I, Data) -> digital_in(I, Data, 1, []).
-digital_in(0, Data, _, []) ->
-  {[], Data};
-digital_in(0, Data, _, DIn) ->
-  {{digital_in, DIn}, Data};
-digital_in(I, <<DIn:8, Else/binary>>, N, DIn) when I band 1 =:= 1 ->
-  digital_in(I bsr 1, Else, N + 8, DIn ++ misc:bits2tuples(DIn, N));
-digital_in(I, Data, N, DIn) ->
-  digital_in(I bsr 1, Data, N + 8, DIn).
+digital_in(P, I, Data) -> digital_in(P, I, Data, 0).
+digital_in(P, 0, Data, _) -> {P, Data};
+digital_in(P, I, <<DIn:8, Else/binary>>, N) when I band 1 =:= 1 ->
+  digital_in(
+    misc:update_path(
+      [digital, in],
+      maps:merge(
+        maps:get(in, maps:get(digital, P, #{}), #{}),
+        misc:bits2tuples(8, DIn, N)),
+      P),
+    I bsr 1,
+    Else,
+    N + 8);
+digital_in(P, I, Data, N) ->
+  digital_in(P, I bsr 1, Data, N + 8).
 
-analog(I, Data) -> analog(I, Data, 1, []).
-analog(0, _, _, []) ->
-  [];
-analog(0, _, _, Analog) ->
-  [{analog, lists:reverse(Analog)}];
-analog(I, <<Data:3/binary, Else/binary>>, N, Analog) when I band 1 =:= 1 ->
-  analog(I bsr 1, Else, N + 1, [{N, Data} | Analog]);
-analog(I, Data, N, Analog) ->
-  analog(I bsr 1, Data, N + 1, Analog).
+analog(P, I, Data) -> analog(P, I, Data, 1).
+analog(P, 0, _, _) -> P;
+analog(P, I, <<Val:?FLOAT, Else/binary>>, N) when I band 1 =:= 1 ->
+  analog(misc:update_path(
+           [analog, in, N],
+           Val / 100,
+           P),
+         I bsr 1,
+         Else,
+         N + 1);
+analog(P, I, Data, N) ->
+  analog(P, I bsr 1, Data, N + 1).
 
 nav_systems(0) -> [];
 nav_systems(I) -> nav_systems(I, 1, []).

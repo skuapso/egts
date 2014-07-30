@@ -36,9 +36,7 @@
     uin,
     timeout = ?TIMEOUT,
     answer = <<>>,
-    response = <<>>,
-    packet_id,
-    local_address = 0
+    response = <<>>
     }).
 
 -include_lib("logger/include/log.hrl").
@@ -111,7 +109,7 @@ handle_call({raw_data, RawData}, _From, #state{uin = undefined} = State) ->
   {reply, ok, State#state{answer = RawData}};
 handle_call({raw_data, RawData}, {TPid, _Tag},
             #state{timeout = Timeout, uin = UIN, terminator = TPid} = State) ->
-  Answer = case hooks:run(terminal_raw_data, [?MODULE, UIN, RawData], Timeout) of
+  Answer = case hooks:run(terminal_raw_data, [{?MODULE, UIN}, RawData], Timeout) of
     [] ->
       <<>>;
     [{Module, {answer, RawAnswer}}] ->
@@ -123,7 +121,7 @@ handle_call({data, []}, {TPid, _Tag}, #state{timeout = Timeout,
                                              uin = UIN,
                                              answer = {Module, Answer}} = State) ->
   debug("terminal answer ~w", [{Module, Answer}]),
-  hooks:run(terminal_answer, [Module, UIN, Answer], Timeout),
+  hooks:run(terminal_answer, [{?MODULE, UIN}, Module, Answer], Timeout),
   ?T:send(TPid, Answer),
   {reply, ok, State#state{answer = <<>>, response = <<>>}, Timeout};
 %%--------------------------------------------------------------------
@@ -152,9 +150,10 @@ handle_call({Type, _RawData, Parsed},
   trace("new data"),
   PacketID = proplists:get_value(msg_id, Parsed),
   ServiceFrame = proplists:get_value(service_frame, Parsed, <<>>),
-  {ok, ServiceRecords} = ?T:parse({service, Type, ServiceFrame}),
+  {ServiceRecords, Infos} = ?T:parse({service, Type, ServiceFrame}),
   trace("service records: ~w", [ServiceRecords]),
-  {Answers, NewState} = handle_service_records(ServiceRecords, State),
+  NewState = handle_service_records(ServiceRecords, State),
+  Answers = handle_service_infos(Infos),
   trace("service reponses ~w", [Answers]),
   Response = ?T:response({transport, {PacketID, Answers}}),
   debug("response is ~w", [Response]),
@@ -242,64 +241,31 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-handle_service_records(Services, State) ->
-  handle_service_records(Services, [], State).
-
-handle_service_records([], Responses, State) ->
-  {lists:reverse(Responses), State};
-handle_service_records([Service | Services], Responses, State) ->
-  {Response, NewState} = handle_service_record(Service, State),
-  handle_service_records(Services, [Response | Responses], NewState).
+handle_service_records([], State) ->
+  State;
+handle_service_records([Service | Services], State) ->
+  NewState = handle_service_record(Service, State),
+  handle_service_records(Services, NewState).
 
 handle_service_record(Record, #state{uin = undefined,
                                      answer = RawData,
                                      terminator = TPid,
                                      timeout = Timeout} = State) ->
-  UIN = case Record of
-          {auth, _, [{_, [{auth, AuthData}]}], _} ->
-            proplists:get_value(imei, AuthData,
-                                proplists:get_value(terminal_id, AuthData));
-          {_, _, _, Info} ->
-            proplists:get_value(object_id, Info)
-        end,
+  UIN = maps:get(imei, Record, maps:get(terminal_id, Record, maps:get(object_id, Record))),
   true = is_integer(UIN),
-  hooks:run(terminal_uin, [?MODULE, UIN], Timeout),
+  hooks:run(terminal_uin, [{?MODULE, UIN}], Timeout),
   {reply, ok, NewState, Timeout} = handle_call({raw_data, RawData}, {TPid, undefined},
                           State#state{uin = UIN, answer = <<>>}),
   handle_service_record(Record, NewState#state{timeout = Timeout});
-handle_service_record({Type, _, Packets, Info} = Record, #state{uin = UIN,
-                                                          timeout = Timeout} = State) ->
+handle_service_record(Record,
+                      #state{uin = UIN,
+                             timeout = Timeout} = State) ->
   debug("handling service record ~w", [Record]),
-  [case Packet of
-     {RawPacket, Parsed} ->
-       Type1 = packet_type(Type, Parsed),
-       debug("type: ~w", [Type1]),
-       Parsed1 = case Parsed of
-                   [{navigation, N} | T] ->
-                     case proplists:get_value(used, N) of
-                       undefined ->
-                         case proplists:get_value(valid, N) of
-                           1 -> [{navigation, [{used, 4} | N]} | T];
-                           _ -> [{navigation, N} | T]
-                         end;
-                       _ -> [{navigation, N} | T]
-                     end;
-                   Parsed -> Parsed
-                 end,
-       hooks:run(terminal_packet, [?MODULE, UIN, Type1, RawPacket, Parsed1], Timeout);
-     Else -> warning("packet wrong format ~w", [Else])
-   end
-   || Packet <- Packets],
-  {?T:response({service, Info}), State}.
+  hooks:run(terminal_packet, [{?MODULE, UIN}, Record], Timeout),
+  State.
 
-packet_type(auth, _) -> authentication;
-packet_type(teledata, Data) ->
-  Nav = proplists:get_value(navigation, Data),
-  case proplists:get_value(offline, Nav) of
-    1 -> offline;
-    0 -> online
-  end;
-packet_type(_, _) -> unknown.
+handle_service_infos(Infos) ->
+  [?T:response({service, Info}) || Info <- Infos].
 
 -define(CRC16Table, {
     16#0000, 16#1021, 16#2042, 16#3063, 16#4084, 16#50A5, 16#60C6, 16#70E7,
