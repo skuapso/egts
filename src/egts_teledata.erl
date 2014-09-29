@@ -36,6 +36,7 @@ position(P, <<
   P1 = P#{
     eventtime => calendar:gregorian_seconds_to_datetime(63429523200 + NTM),
     location => #{
+      course => Dir + 256 * DIRH,
       latitude => sign(LAHS)*Lat*90/16#ffffffff,
       longitude=> sign(LOHS)*Lon*180/16#ffffffff},
     parking => MV bxor 1,
@@ -44,7 +45,6 @@ position(P, <<
     cs => CS,
     valid => VLD,
     speed => SPD/10,
-    course => Dir + 256 * DIRH,
     odometer => ODM,
     event => SRC},
   P2 = position_opt_data(P1, ALTE, ALTS, SRC, Else),
