@@ -1,6 +1,5 @@
 -module(egts_terminator).
 
--behaviour(gen_server).
 -behaviour(terminator).
 
 -export([

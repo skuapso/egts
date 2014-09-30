@@ -1,6 +1,5 @@
 -module(egts).
 
--behaviour(gen_server).
 -behaviour(terminator).
 
 %% API
@@ -16,7 +15,7 @@
 -export([
   close/1,
   accept/1,
-  enter_loop/1,
+  init/1,
   packet_type/1
   ]).
 
@@ -57,7 +56,7 @@ accept(Pid) ->
 close(Pid) ->
   gen_server:cast(Pid, close).
 
-enter_loop(Socket) ->
+init({Socket, _Opts}) ->
   gen_server:enter_loop(?MODULE, [], Socket, ?TIMEOUT).
 
 data(_Pid, [], <<>>) ->
