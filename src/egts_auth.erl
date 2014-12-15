@@ -9,11 +9,11 @@
 response(Data) -> egts_service:parse(response, Data).
 
 term_identify(P, <<TID:?UINT, Opts:?BYTE, Else/binary>>) ->
-  trace("term identify opts ~w, data ~s", [Opts, Else]),
+  '_trace'("term identify opts ~w, data ~s", [Opts, Else]),
   term_identify(P#{type => authentication, terminal_id => TID}, Opts, Else, 0).
 
 term_identify(P, 0, _, _) ->
-  debug("identify: ~w", [P]),
+  '_debug'("identify: ~w", [P]),
   P;
 term_identify(P, Opts, Data, N) when (Opts band 1 =/= 1) ->
   term_identify(P, Opts bsr 1, Data, N + 1);

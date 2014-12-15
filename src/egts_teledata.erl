@@ -48,7 +48,7 @@ position(P, <<
     odometer => ODM,
     event => SRC},
   P2 = position_opt_data(P1, ALTE, ALTS, SRC, Else),
-  debug("navigation data: ~w", [P2]),
+  '_debug'("navigation data: ~w", [P2]),
   misc:update_path(
     [digital, in],
     misc:bits2map(8, DIn),
@@ -73,7 +73,7 @@ position_ext(P, <<_:3, Bits:5, Rest/binary>>) ->
 position_ext(P, 0, <<>>, _N) ->
   P;
 position_ext(P, 0, Data, _N) ->
-  warning("unparsed data ~s", [Data]),
+  '_warning'("unparsed data ~s", [Data]),
   P;
 position_ext(P, Bits, <<Val:?USHORT, Rest/binary>>, 1 = N) when Bits band 1 =:= 1 ->
   position_ext(P#{vdop => Val}, Bits bsr 1, Rest, N + 1);
@@ -133,10 +133,10 @@ loopin(P, <<I:8, Data/binary>>) -> loopin(P, Data, I, 0).
 loopin(P, BinData, 0, _N) when (BinData =:= <<>>) or (BinData =:= <<0:4>>) ->
   P;
 loopin(P, Unparsed, 0, N) ->
-  warning("unparsed data in loopin ~w, N ~w", [Unparsed, N]),
+  '_warning'("unparsed data in loopin ~w, N ~w", [Unparsed, N]),
   loopin(P, <<>>, 0, N);
 loopin(P, <<LIS:4, Else/binary>> = BinData, I, N) when I band 1 =:= 1 ->
-  trace("parsing ~w", [BinData]),
+  '_trace'("parsing ~w", [BinData]),
   loopin(
     misc:update_path(
       [loop, in, N],
@@ -146,7 +146,7 @@ loopin(P, <<LIS:4, Else/binary>> = BinData, I, N) when I band 1 =:= 1 ->
     I bsr 1,
     N + 1);
 loopin(P, BinData, I, N) ->
-  trace("parsing ~w", [BinData]),
+  '_trace'("parsing ~w", [BinData]),
   loopin(P, BinData, I bsr 1, N + 1).
 
 abs_digital(P, <<Low:4, Val:4, High:8>>) ->
@@ -177,7 +177,7 @@ abs_loopin(P, <<Low:4, Val:4, High:8>>) ->
 
 lls(P, <<>>) -> P;
 lls(P, <<_:1, 1:1, _/binary>>) ->
-  warning("lls reading error"),
+  '_warning'("lls reading '_err'or"),
   P;
 lls(P, <<_:1, 0:1, 0:2, 0:1, N:3, Port:?USHORT, Val:?UINT>>) ->
   misc:update_path(
@@ -187,9 +187,9 @@ lls(P, <<_:1, 0:1, 0:2, 0:1, N:3, Port:?USHORT, Val:?UINT>>) ->
       [lls, N],
       Val,
       P));
-lls(P, Data) -> warning("unsupported lls data ~s", [Data]), P.
+lls(P, Data) -> '_warning'("unsupported lls data ~s", [Data]), P.
 
-passengers_counters(P, _Data) -> warning("not parsed passengers counter"), P;
+passengers_counters(P, _Data) -> '_warning'("not parsed passengers counter"), P;
 passengers_counters(P, <<>>) -> P;
 passengers_counters(P, <<_:7, 1:1, DPR:?BYTE, DRL:?BYTE, Port:?USHORT, Rest/binary>>) ->
   misc:update_path(

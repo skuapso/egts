@@ -43,7 +43,7 @@
 %% @doc
 %% Starts the server
 %%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
+%% @spec start_link() -> {ok, Pid} | ignore | {'_err'or, Error}
 %% @end
 %%--------------------------------------------------------------------
 start_link(Socket) ->
@@ -86,7 +86,7 @@ packet_type(N) ->
 %% @end
 %%--------------------------------------------------------------------
 init({Socket, Handler}) ->
-  trace("starting"),
+  '_trace'("starting"),
   {ok, #state{socket = Socket, handler = Handler}}.
 
 %%--------------------------------------------------------------------
@@ -104,7 +104,7 @@ init({Socket, Handler}) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call(Request, From, State) ->
-  warning("unhandled call ~w from ~w", [Request, From]),
+  '_warning'("unhandled call ~w from ~w", [Request, From]),
   close(),
   {noreply, State}.
 
@@ -119,7 +119,7 @@ handle_call(Request, From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast(accept, #state{socket = Socket} = State) ->
-  trace("accepting"),
+  '_trace'("accepting"),
   ok = inet:setopts(Socket, ?TCP_OPTIONS),
   {noreply, State};
 handle_cast({send, <<>>}, State) ->
@@ -129,17 +129,17 @@ handle_cast({send, Data}, State) when byte_size(Data) > ?MAX_OUT_SIZE ->
   handle_cast({send, Packet}, State),
   handle_cast({send, Else}, State);
 handle_cast({send, Data}, #state{socket = Socket} = State) ->
-  debug("sending ~w", [Data]),
+  '_debug'("sending ~w", [Data]),
   gen_tcp:send(Socket, Data),
   {noreply, State};
 handle_cast(close, #state{incomplete = Incomplete} = State) when Incomplete =/= <<>> ->
-  notice("request for close"),
+  '_notice'("request for close"),
   {stop, {incomplete, Incomplete}, State#state{incomplete = <<>>}};
 handle_cast(close, #state{incomplete = Incomplete} = State) when Incomplete =:= <<>> ->
-  trace("request for close"),
+  '_trace'("request for close"),
   {stop, normal, State};
 handle_cast(Msg, State) ->
-  warning("unhandled cast msg ~w", [Msg]),
+  '_warning'("unhandled cast msg ~w", [Msg]),
   close(),
   {noreply, State}.
 
@@ -156,19 +156,19 @@ handle_cast(Msg, State) ->
 handle_info({tcp, Socket, TcpData}, #state{socket = Socket, incomplete = StoredData} = S)
     when (byte_size(TcpData) + byte_size(StoredData)) > ?MAX_IN_SIZE
     ->
-  warning("overflow: ~w", [<<StoredData/binary, TcpData/binary>>]),
+  '_warning'("overflow: ~w", [<<StoredData/binary, TcpData/binary>>]),
   close(),
   {noreply, S#state{incomplete = <<StoredData/binary, TcpData/binary>>}};
 handle_info({tcp, Socket, TcpData}, #state{
         socket = Socket,
         handler = Handler,
         incomplete = StoredData} = S) ->
-  trace("new tcp data"),
+  '_trace'("new tcp data"),
   RawData = <<StoredData/binary, TcpData/binary>>,
-  debug("parsing ~w", [RawData]),
+  '_debug'("parsing ~w", [RawData]),
   {Packets, Parsed, Incomplete} = parse({transport, RawData}),
-  debug("packets: ~w", [Packets]),
-  debug("incomlete: ~w", [Incomplete]),
+  '_debug'("packets: ~w", [Packets]),
+  '_debug'("incomlete: ~w", [Incomplete]),
   ?T:data(Handler, Packets, Parsed),
   if
     Packets =/= [], Incomplete =/= <<>> -> self() ! {tcp, Socket, <<>>};
@@ -176,11 +176,11 @@ handle_info({tcp, Socket, TcpData}, #state{
   end,
   {noreply, S#state{incomplete = Incomplete}};
 handle_info({tcp_closed, Socket}, #state{socket = Socket} = State) ->
-  trace("connection closed"),
+  '_trace'("connection closed"),
   close(),
   {noreply, State};
 handle_info(Info, State) ->
-  warning("unhandled info ~w", [Info]),
+  '_warning'("unhandled '_info' ~w", [Info]),
   close(),
   {noreply, State}.
 

@@ -36,7 +36,7 @@ response(Info) ->
 parse(response, Data) ->
   [{data, Data}];
 parse(Type, Data) ->
-  trace("parsing ~w ~w", [Type, Data]),
+  '_trace'("parsing ~w ~w", [Type, Data]),
   parse(Type, Data, [], []).
 
 parse(_Type, <<>>, P, Infos) -> {lists:reverse(P), lists:reverse(Infos)};
@@ -44,10 +44,10 @@ parse(egts_pt_appdata = Type,
       <<RL:?USHORT, RN:?USHORT, SSOD:1, RSOD:1, GRP:1, RPP:2, Opts:3, _/binary>> = Data,
       Records, Infos) ->
   OptHL = header_length(Opts),
-  debug("record header length ~w", [OptHL]),
-  debug("record length ~w", [RL]),
+  '_debug'("record header length ~w", [OptHL]),
+  '_debug'("record length ~w", [RL]),
   <<_:5/binary, OptHeader:OptHL/binary, SST:8, RST:8, RecordsBin:RL/binary, Else/binary>> = Data,
-  debug("header: ~w, opts: ~w", [OptHeader, Opts]),
+  '_debug'("header: ~w, opts: ~w", [OptHeader, Opts]),
   Info = parse_header(#{
            msg_id => RN,
            ssod => SSOD,
@@ -65,8 +65,8 @@ parse(egts_pt_response = Type,
         RecordStatus:?BYTE,
         Else/binary>>,
       Records, Infos) ->
-  trace("~w record number ~w", [Type, RN]),
-  trace("~w record status ~w", [Type, RecordStatus]),
+  '_trace'("~w record number ~w", [Type, RN]),
+  '_trace'("~w record status ~w", [Type, RecordStatus]),
   parse(egts_pt_appdata, Else, Records, Infos).
 
 header_length(F) -> header_length(F, 0).
@@ -75,21 +75,21 @@ header_length(F, L) -> header_length(F bsr 1, F band 1 + L).
 
 parse_records(P, _Info, <<>>) -> lists:reverse(P);
 parse_records(P, #{sst := SST} = Info, <<Type:?BYTE, L:?USHORT, Data:L/binary, Else/binary>>) ->
-  trace("subrecord ~w", [Data]),
-  trace("else ~w", [Else]),
+  '_trace'("subrecord ~w", [Data]),
+  '_trace'("else ~w", [Else]),
   SR = subrecord(SST, Type),
   {Record, Parsed, Raw} = case {P, SR} of
                        {_, term_identify} ->
-                         debug("new auth record"),
+                         '_debug'("new auth record"),
                          {Info, P, <<>>};
                        {_, position} ->
-                         debug("new record"),
+                         '_debug'("new record"),
                          {Info, P, <<>>};
                        {[], _} ->
-                         debug("new record cause empty"),
+                         '_debug'("new record cause empty"),
                          {Info, P, <<>>};
                        {[Rec | Pars], _} ->
-                         debug("updating record ~w", [Rec]),
+                         '_debug'("updating record ~w", [Rec]),
                          {Rec, Pars, maps:get(raw, Rec)}
                      end,
   Record1 = parse_subrecord(Record, SST, SR, Data),
@@ -119,7 +119,7 @@ parse_header_field(0, <<ObjectID:?UINT>>) -> {object_id, ObjectID}.
 
 parse_subrecord(P, Service, SubRecord, Data) ->
   M = list_to_atom("egts_" ++ atom_to_list(Service)),
-  debug("calling ~w:~w", [M, SubRecord]),
+  '_debug'("calling ~w:~w", [M, SubRecord]),
   M:SubRecord(P, Data).
 
 service( 0)  -> response;

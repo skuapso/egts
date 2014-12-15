@@ -47,7 +47,7 @@
 %% @doc
 %% Starts the server
 %%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
+%% @spec start_link() -> {ok, Pid} | ignore | {'_err'or, Error}
 %% @end
 %%--------------------------------------------------------------------
 accept(Pid) ->
@@ -119,7 +119,7 @@ handle_call({data, []}, {TPid, _Tag}, #state{timeout = Timeout,
                                              terminator = TPid,
                                              uin = UIN,
                                              answer = {Module, Answer}} = State) ->
-  debug("terminal answer ~w", [{Module, Answer}]),
+  '_debug'("terminal answer ~w", [{Module, Answer}]),
   hooks:run(terminal_answer, [{?MODULE, UIN}, Module, Answer], Timeout),
   ?T:send(TPid, Answer),
   {reply, ok, State#state{answer = <<>>, response = <<>>}, Timeout};
@@ -134,31 +134,31 @@ handle_call({data, []} = Data, From, #state{response = Answer} = State) ->
 handle_call({egts_pt_routing = Type, RawData, {_PRA, _RCA, _TTL, Data}} = Packet,
             From,
             State) ->
-  emerg("~w ~w", [Type, Packet]),
+  '_emerg'("~w ~w", [Type, Packet]),
   <<_:9/binary, PT:?BYTE, _/binary>> = RawData,
   PacketType = ?T:packet_type(PT),
   handle_call({PacketType, RawData, Data}, From, State);
 handle_call({egts_pt_response = Type, _Raw, Parsed}, _From, State) ->
   SF = proplists:get_value(service_frame, Parsed, <<>>),
   {ok, SR} = ?T:parse({service, egts_pt_response, SF}),
-  warning("~w ~w", [Type, SR]),
+  '_warning'("~w ~w", [Type, SR]),
   {reply, ok, State, State#state.timeout};
 handle_call({Type, _RawData, Parsed},
             {TPid, _Tag},
             #state{timeout = Timeout, terminator = TPid} = State) ->
-  trace("new data"),
+  '_trace'("new data"),
   PacketID = proplists:get_value(msg_id, Parsed),
   ServiceFrame = proplists:get_value(service_frame, Parsed, <<>>),
   {ServiceRecords, Infos} = ?T:parse({service, Type, ServiceFrame}),
-  trace("service records: ~w", [ServiceRecords]),
+  '_trace'("service records: ~w", [ServiceRecords]),
   NewState = handle_service_records(ServiceRecords, State),
   Answers = handle_service_infos(Infos),
-  trace("service reponses ~w", [Answers]),
+  '_trace'("service reponses ~w", [Answers]),
   Response = ?T:response({transport, {PacketID, Answers}}),
-  debug("response is ~w", [Response]),
+  '_debug'("response is ~w", [Response]),
   {reply, ok, NewState#state{response = Response}, Timeout};
 handle_call(Request, From, #state{timeout = Timeout, terminator = TPid} = State) ->
-  warning("unhandled call ~w from ~w", [Request, From]),
+  '_warning'("unhandled call ~w from ~w", [Request, From]),
   ?T:close(TPid),
   {reply, ok, State, Timeout}.
 
@@ -173,17 +173,17 @@ handle_call(Request, From, #state{timeout = Timeout, terminator = TPid} = State)
 %% @end
 %%--------------------------------------------------------------------
 handle_cast(accept, Socket) ->
-  trace("accept"),
+  '_trace'("accept"),
   {ok, TPid} = ?T:start_link(Socket),
   ok = gen_tcp:controlling_process(Socket, TPid),
   ok = ?T:accept(TPid),
   {noreply, #state{terminator = TPid}, ?TIMEOUT};
 handle_cast(close, #state{terminator = TPid, timeout = Timeout} = State) ->
-  trace("cast for close"),
+  '_trace'("cast for close"),
   ?T:close(TPid),
   {noreply, State, Timeout};
 handle_cast(Msg, #state{terminator = TPid, timeout = Timeout} = State) ->
-  warning("unhandled cast: ~w", [Msg]),
+  '_warning'("unhandled cast: ~w", [Msg]),
   ?T:close(TPid),
   {noreply, State, Timeout}.
 
@@ -198,17 +198,17 @@ handle_cast(Msg, #state{terminator = TPid, timeout = Timeout} = State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info(timeout, #state{terminator = TPid, timeout = Timeout} = State) ->
-  trace("timeout, closing"),
+  '_trace'("timeout, closing"),
   ?T:close(TPid),
   {noreply, State, Timeout};
 handle_info({'EXIT', From, normal}, #state{terminator = From} = State) ->
-  trace("terminator died"),
+  '_trace'("terminator died"),
   {stop, normal, State};
 handle_info({'EXIT', From, Reason}, #state{terminator = From} = State) ->
-  warning("terminator died ~w", [Reason]),
+  '_warning'("terminator died ~w", [Reason]),
   {stop, Reason, State};
 handle_info(Info, #state{terminator = TPid, timeout = Timeout} = State) ->
-  warning("unhandled info ~w", [Info]),
+  '_warning'("unhandled '_info' ~w", [Info]),
   ?T:close(TPid),
   {noreply, State, Timeout}.
 
@@ -259,7 +259,7 @@ handle_service_record(Record, #state{uin = undefined,
 handle_service_record(Record,
                       #state{uin = UIN,
                              timeout = Timeout} = State) ->
-  debug("handling service record ~w", [Record]),
+  '_debug'("handling service record ~w", [Record]),
   hooks:run(terminal_packet, [{?MODULE, UIN}, Record], Timeout),
   State.
 

@@ -33,7 +33,7 @@ response({PID, Data}) ->
       HL:?BYTE,
       HE:?BYTE,
       FDL:?USHORT, PID:?USHORT, PT:?BYTE>>,
-  debug("header of response ~w", [Header]),
+  '_debug'("header of response ~w", [Header]),
   HCS = egts:crc8(Header),
   ServiceData = case SFRD of
     <<>> -> <<>>;
@@ -61,7 +61,7 @@ parse(<<
     ->
   PacketType = packet_type(PT),
   <<Header:16#0a/binary, HCS:?BYTE, _/binary>> = Data,
-  debug("header: ~s, crc: ~w", [Header, HCS]),
+  '_debug'("header: ~s, crc: ~w", [Header, HCS]),
   true = egts:check_crc8(HCS, Header),
   {SFRD, Else} = get_service_data(FDL, Data, 16#0b),
   {
@@ -88,8 +88,8 @@ parse(<<
     ENA =:= 0, CMP =:= 0, SKID =:= 0, HE =:= 0
     ->
   <<Header:16#0a/binary, HCS:?BYTE, _/binary>> = Data,
-  debug("header: ~w, crc: ~w", [Header, HCS]),
-  debug("routing packet"),
+  '_debug'("header: ~w, crc: ~w", [Header, HCS]),
+  '_debug'("routing packet"),
   true = egts:check_crc8(HCS, Header),
   {SFRD, Else} = get_service_data(FDL, Data, 16#10),
   {
@@ -105,7 +105,7 @@ parse(<<_:24, HL:?BYTE, _:8, FDL:?USHORT, _/binary>> = Data)
     when ((HL =:= 16#10) or (HL =:= 16#0b)), (
                                     ((FDL>0) and (byte_size(Data) < (HL + FDL + 2)))
                                     or ((FDL=:=0) and (byte_size(Data) < HL))) ->
-  debug("incomplete data ~w, header length ~w, frame length ~w", [Data, HL, FDL]),
+  '_debug'("incomplete data ~w, header length ~w, frame length ~w", [Data, HL, FDL]),
   {[], <<>>, Data};
 parse(<<_:24, HL:?BYTE, _/binary>> = Data)
     when HL =:= 16#10; HL =:= 16#0b ->
@@ -120,7 +120,7 @@ parse(<<
         _/binary
       >> = Data
      ) when HL =/= 16#0a, HL =/= 16#10 ->
-  warning("wrong length ~w: ~w(~w/~w)", [Data, byte_size(Data), {header, HL}, {service, FDL}]),
+  '_warning'("wrong length ~w: ~w(~w/~w)", [Data, byte_size(Data), {header, HL}, {service, FDL}]),
   print_header(Data),
   {badlen, {data, byte_size(Data)}, {header, HL}, {frame, FDL}};
 parse(Data) -> {[], <<>>, Data}.
@@ -133,7 +133,7 @@ get_service_data(0, Else) ->
   {<<>>, Else};
 get_service_data(L, Data) ->
   <<SFRD:L/binary, SFRCS:?USHORT, Else/binary>> = Data,
-  debug("service data: ~s, crc: ~w", [SFRD, SFRCS]),
+  '_debug'("service data: ~s, crc: ~w", [SFRD, SFRCS]),
   true = egts:check_crc16(SFRCS, SFRD),
   {SFRD, Else}.
 
@@ -158,14 +158,14 @@ print_header(<<
                _/binary
              >>
             ) ->
-  warning("prv:  ~w(~w)", [PRV, 16#01]),
-  warning("skid: ~w(~w)", [SKID, {undef, 0}]),
-  warning("prf:  ~w(~w)", [PRF, 2#00]),
-  warning("ena:  ~w(~w)", [ENA, {undef, 0}]),
-  warning("cmp:  ~w(~w)", [CMP, {undef, 0}]),
-  warning("pr:   ~w(~w)", [PR, {priority}]),
-  warning("hl:   ~w(~w)", [HL, {header_length, 16#10, 16#0b}]),
-  warning("he:   ~w(~w)", [HE, {undef, 0}]),
-  warning("fdl:  ~w(~w)", [FDL, {service_frame_length}]),
-  warning("pid:  ~w(~w)", [PID, {msg_id}]),
-  warning("pt:   ~w(~w)", [PT, {packet_type, 0, 1, 2}]).
+  '_warning'("prv:  ~w(~w)", [PRV, 16#01]),
+  '_warning'("skid: ~w(~w)", [SKID, {undef, 0}]),
+  '_warning'("prf:  ~w(~w)", [PRF, 2#00]),
+  '_warning'("ena:  ~w(~w)", [ENA, {undef, 0}]),
+  '_warning'("cmp:  ~w(~w)", [CMP, {undef, 0}]),
+  '_warning'("pr:   ~w(~w)", [PR, {priority}]),
+  '_warning'("hl:   ~w(~w)", [HL, {header_length, 16#10, 16#0b}]),
+  '_warning'("he:   ~w(~w)", [HE, {undef, 0}]),
+  '_warning'("fdl:  ~w(~w)", [FDL, {service_frame_length}]),
+  '_warning'("pid:  ~w(~w)", [PID, {msg_id}]),
+  '_warning'("pt:   ~w(~w)", [PT, {packet_type, 0, 1, 2}]).
