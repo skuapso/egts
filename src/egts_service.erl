@@ -117,10 +117,15 @@ parse_header_field(2, <<Sec:?UINT>>) ->
 parse_header_field(1, <<EventID:?UINT>>) -> {event_id, EventID};
 parse_header_field(0, <<ObjectID:?UINT>>) -> {object_id, ObjectID}.
 
+parse_subrecord(P, _, response, Data) ->
+  parse_response(P, Data);
 parse_subrecord(P, Service, SubRecord, Data) ->
-  M = list_to_atom("egts_" ++ atom_to_list(Service)),
+  M = module(Service),
   '_debug'("calling ~w:~w", [M, SubRecord]),
   M:SubRecord(P, Data).
+
+parse_response(P, <<MsgId:?USHORT, Status:?BYTE>>) ->
+  P#{r => #{msg_id => MsgId, status => Status}}.
 
 service( 0)  -> response;
 service( 1)  -> auth;
@@ -151,3 +156,9 @@ subrecord(teledata, 25)     -> abs_counter;
 subrecord(teledata, 26)     -> abs_loopin;
 subrecord(teledata, 27)     -> lls;
 subrecord(teledata, 28)     -> passengers_counters.
+
+module(auth) -> egts_auth;
+module(teledata) -> egts_teledata;
+module(commands) -> egts_commands;
+module(firmware) -> egts_firmware;
+module(ecall)    -> egts_ecall.
