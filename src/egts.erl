@@ -119,7 +119,7 @@ answer(State) ->
                    to => From},
   NewIState = #{handler => Handler},
   NewState = set_state(State, NewIState),
-  {ok, {?MODULE, Answer}, NewState}.
+  {ok, Answer, NewState}.
 
 handle_hooks(_HookName, _Data, _HooksReplies, _State) ->
   ok.
