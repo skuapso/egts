@@ -13,6 +13,9 @@
 %% API
 -export([accept/1]).
 -export([send/2]).
+-export([connect/3]).
+-export([setopts/2]).
+-export([recv/2]).
 
 %% gen_server callbacks
 -export([init/1]).
@@ -38,6 +41,16 @@ accept(Socket) ->
 
 send(Pid, Data) when is_pid(Pid) ->
   gen_server:cast(Pid, {send, self(), Data}).
+
+connect(Host, Port, Opts) ->
+  State = #state{socket = {Host, Port, Opts}, handler = self()},
+  gen_server:start_link(?MODULE, State, []).
+
+setopts(Pid, Opts) ->
+  gen_server:cast(Pid, {setopts, Opts}).
+
+recv(Pid, L) ->
+  gen_server:call(Pid, {recv, L}).
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -53,10 +66,14 @@ send(Pid, Data) when is_pid(Pid) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init(State) ->
+init(#state{socket = Socket} = State) when is_port(Socket) ->
   '_trace'("init"),
   process_flag(trap_exit, true),
-  {ok, State}.
+  {ok, State};
+init(#state{socket = {Host, Port, Opts}} = State) ->
+  {ok, Socket} = gen_tcp:connect(Host, Port, Opts),
+  init(State#state{socket = Socket}).
+
 
 %%--------------------------------------------------------------------
 %% @private
@@ -72,6 +89,10 @@ init(State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_call({recv, 0}, _From, #state{socket = Socket, address = Address} = State) ->
+  {ok, Data} = gen_tcp:recv(Socket, 0),
+  {[Packet], <<>>} = unpack([], Data, Address),
+  {reply, {ok, Packet}, State};
 handle_call(_Request, _From, State) ->
   '_warning'("unhandled call ~w from ~w", [_Request, _From]),
   {noreply, State}.
@@ -86,8 +107,10 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_cast({send, _From, Data}, #state{socket = Socket} = State) when is_binary(Data) ->
+  gen_tcp:send(Socket, Data),
+  {noreply, State};
 handle_cast({send, From, Data}, #state{
-                             socket = Socket,
                              ttl = Ttl,
                              handler = From} = State) ->
   Data1 = case maps:get(ttl, Data, undefined) of
@@ -95,7 +118,9 @@ handle_cast({send, From, Data}, #state{
             _ -> Data
           end,
   {ok, BinData} = pack(Data1),
-  gen_tcp:send(Socket, BinData),
+  handle_cast({send, From, BinData}, State);
+handle_cast({setopts, Opts}, #state{socket = Socket} = State) ->
+  inet:setopts(Socket, Opts),
   {noreply, State};
 handle_cast(_Msg, State) ->
   '_warning'("unhandled cast ~w", [_Msg]),
@@ -126,8 +151,9 @@ handle_info({tcp, Socket, TcpData}, #state{
     end,
     Packets),
   {noreply, State#state{incomplete = Incomplete1}};
-handle_info({tcp_closed, Socket}, #state{socket = Socket} = State) ->
-  {stop, normal, State};
+handle_info({tcp_closed, Socket}, #state{handler = Handler, socket = Socket} = State) ->
+  egts:closed(Handler, Socket),
+  {noreply, State};
 handle_info({'EXIT', Handler, _Reason}, #state{handler = Handler} = State) ->
   {stop, normal, State};
 handle_info({tcp, Socket, _}, #state{socket = Socket} = State) ->
@@ -147,8 +173,8 @@ handle_info(_Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
-  '_warning'("terminating with reason ~w", [_Reason]),
+terminate(Reason, _State) ->
+  '_warning'(Reason =/= normal, "terminating with reason ~w", [Reason], debug),
   ok.
 
 %%--------------------------------------------------------------------
@@ -210,7 +236,7 @@ pack(Data) when is_map(Data) ->
 unpack(Packets,
        <<
          PRV:?BYTE, SKID:?BYTE,
-         PRF:2, RT:1, ENA:2, CMP:1, PR:2,
+         PRF:2, RTE:1, ENA:2, CMP:1, PR:2,
          HL:?BYTE,
          HE:?BYTE,
          FDL:?USHORT,
@@ -223,7 +249,7 @@ unpack(Packets,
     PRV =:= 16#01         % protocol version
     andalso PRF =:= 2#00  % header prefix (header version?)
     andalso (
-     (RT =:= 0 andalso HL =:= 16#0b)
+     (RTE =:= 0 andalso HL =:= 16#0b)
      orelse HL =:= 16#10
     )
     % не определены в данной версии протокола
@@ -249,26 +275,23 @@ unpack(Packets,
         <<F:FDL/binary, FrameCrc:?USHORT>> ->
           FrameCrc = egts:crc16(F)
       end,
-      {PRA, RCA, TTL} = case RT of
-                          0 ->
-                            {undefined, undefined, undefined};
-                          1 ->
-                            <<_:10/binary,
-                              PRA_:?USHORT,
-                              RCA_:?USHORT,
-                              TTL_:?BYTE>> = Header,
-                            {PRA_, RCA_, TTL_}
-                        end,
-      PacketType = case RT of
-                     1 -> egts_pt_routing;
-                     0 -> packet_type(PT)
-                   end,
+      {PacketType, PRA, RCA, TTL} = case RTE of
+                                      0 ->
+                                        {packet_type(PT), undefined, undefined, undefined};
+                                      1 ->
+                                        <<_:10/binary,
+                                          PRA_:?USHORT,
+                                          RCA_:?USHORT,
+                                          TTL_:?BYTE>> = Header,
+                                        {egts_pt_routing, PRA_, RCA_, TTL_}
+                                    end,
       EgtsData = #{priority => PR,
                    version => PRV,
                    from => PRA,
                    to => RCA,
                    ttl => TTL,
-                   header => <<Header/binary, HeadCrc:?BYTE>>,
+                   header => Header,
+                   header_crc => HeadCrc,
                    frame => FrameWithCrc,
                    type => PacketType,
                    packet_id => PID
@@ -280,6 +303,9 @@ unpack(Packets, Data, _Address) when byte_size(Data) < 10 ->
 unpack(Packets, <<Header:16#0a/binary, _/binary>>, _Address) ->
   '_warning'("wrong header format"),
   print_header(true, Header),
+  {lists:reverse(Packets), <<>>};
+unpack(Packets, Data, _Address) ->
+  '_warning'("wrong data ~p", [Data]),
   {lists:reverse(Packets), <<>>}.
 
 packet_type(egts_pt_response) -> 0;
@@ -292,7 +318,7 @@ packet_type(2) -> egts_pt_signed_appdata.
 print_header(Condition,
              <<
                PRV:?BYTE, SKID:?BYTE,
-               PRF:2, 0:1, ENA:2, CMP:1, PR:2,
+               PRF:2, RTE:1, ENA:2, CMP:1, PR:2,
                HL:?BYTE,
                HE:?BYTE,
                FDL:?USHORT, PID:?USHORT, PT:?BYTE,
@@ -302,6 +328,7 @@ print_header(Condition,
   '_warning'(Condition, "prv:  ~w(~w)", [PRV, 16#01], debug),
   '_warning'(Condition, "skid: ~w(~w)", [SKID, {undef, 0}], debug),
   '_warning'(Condition, "prf:  ~w(~w)", [PRF, 2#00], debug),
+  '_warning'(Condition, "prf:  ~w(~w)", [RTE, {0, 1}], debug),
   '_warning'(Condition, "ena:  ~w(~w)", [ENA, {undef, 0}], debug),
   '_warning'(Condition, "cmp:  ~w(~w)", [CMP, {undef, 0}], debug),
   '_warning'(Condition, "pr:   ~w(~w)", [PR, {priority}], debug),
