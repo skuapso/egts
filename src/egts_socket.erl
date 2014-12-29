@@ -66,10 +66,13 @@ recv(Pid, L) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
+
 init(#state{socket = Socket} = State) when is_port(Socket) ->
   '_trace'("init"),
+  egts_reg:register(Socket, self()),
   process_flag(trap_exit, true),
   {ok, State};
+
 init(#state{socket = {Host, Port, Opts}} = State) ->
   {ok, Socket} = gen_tcp:connect(Host, Port, Opts),
   init(State#state{socket = Socket}).
@@ -90,9 +93,8 @@ init(#state{socket = {Host, Port, Opts}} = State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call({recv, 0}, _From, #state{socket = Socket, address = Address} = State) ->
-  {ok, Data} = gen_tcp:recv(Socket, 0),
-  {[Packet], <<>>} = unpack([], Data, Address),
-  {reply, {ok, Packet}, State};
+  Reply = recv([], Socket, Address, <<>>),
+  {reply, Reply, State};
 handle_call(_Request, _From, State) ->
   '_warning'("unhandled call ~w from ~w", [_Request, _From]),
   {noreply, State}.
@@ -192,6 +194,15 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+recv(P, Socket, Address, Incomplete) ->
+  {ok, Data} = gen_tcp:recv(Socket, 0),
+  '_debug'("recieved ~p (~p bytes)", [Data, byte_size(Data)]),
+  case unpack([], <<Incomplete/binary, Data/binary>>, Address) of
+    {Packets, <<>>} -> {ok, P ++ Packets};
+    {Packets, Inc} ->
+      recv(P ++ Packets, Socket, Address, <<Incomplete/binary, Inc/binary>>)
+  end.
+
 pack(Data) when is_binary(Data) ->
   {ok, Data};
 pack(#{header := Header, header_crc := HeadCrc, frame := Frame}) ->
