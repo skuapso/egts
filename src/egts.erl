@@ -9,8 +9,11 @@
 -module(egts).
 
 -behaviour(terminal).
+-behaviour(supervisor).
+-behaviour(application).
 
 -export([handle_data/3]).
+-export([closed/2]).
 
 -export([crc8/1]).
 -export([crc16/1]).
@@ -25,6 +28,14 @@
 %% Terminal optional callbacks
 -export([to_binary/2]).
 -export([send/2]).
+-export([connect/3]).
+-export([setopts/2]).
+-export([recv/2]).
+%% Supervisor callbacks
+-export([init/1]).
+-export([start/0]).
+-export([start/2]).
+-export([stop/1]).
 
 -include("egts_binary_types.hrl").
 -include_lib("logger/include/log.hrl").
@@ -39,11 +50,29 @@ set_state(State, IState) -> terminal:set(State, {module, ?MODULE}, IState).
 handle_data(Pid, Socket, Data) ->
   Pid ! {?MODULE, Socket, Data}.
 
+closed(Pid, Socket) ->
+  Pid ! {{?MODULE, closed}, Socket}.
+
+connect(Host, Port, Opts) ->
+  egts_socket:connect(Host, Port, Opts).
+
 send(Socket, Data) when is_port(Socket) andalso is_binary(Data) ->
-  exit({?MODULE, unimplemented, send_to_socket});
-send(Data, State) when is_map(Data) ->
-  Handler = maps:get(handler, state(State)),
-  {egts_socket:send(Handler, Data), State}.
+  Socket ! Data;
+send(Pid, Data) when is_pid(Pid) ->
+  egts_socket:send(Pid, Data);
+send(Socket, Data) when is_port(Socket) ->
+  {ok, Pid} = egts_reg:pid(Socket),
+  send(Pid, Data).
+
+setopts(Pid, Opts) ->
+  egts_socket:setopts(Pid, Opts).
+
+recv(Pid, L) when is_pid(Pid) ->
+  egts_socket:recv(Pid, L);
+recv(Socket, L) when is_port(Socket) ->
+  {ok, Pid} = egts_reg:pid(Socket),
+  recv(Pid, L).
+
 %%%===================================================================
 %%% Terminal callbacks
 %%%===================================================================
@@ -51,10 +80,10 @@ send(Data, State) when is_map(Data) ->
 init(_Opts, State) ->
   {tcp, Socket} = terminal:socket(State),
   {ok, Pid} = egts_socket:accept(Socket),
-  NewState = set_state(
-               terminal:set(State, socket, {?MODULE, Socket}),
-               #{handler => Pid}
-              ),
+  NewState = terminal:set(
+               set_state(State, #{handler => Pid}),
+               socket,
+               {?MODULE, Socket}),
   {ok, NewState}.
 
 uin(#{type := Type, frame := FrameWithCrc}, State) when Type =/= egts_pt_routing ->
@@ -72,7 +101,7 @@ uin(#{type := Type, frame := FrameWithCrc}, State) when Type =/= egts_pt_routing
 to_binary(Type, #{header := Header, header_crc := HeadCrc, frame := Frame})
   when Type =:= raw;
        Type =:= answer ->
-  {ok, <<Header/binary, HeadCrc/binary, Frame>>};
+  {ok, <<Header/binary, HeadCrc:?BYTE, Frame/binary>>};
 to_binary(Type, #{frame := Frame})
   when Type =:= raw;
        Type =:= answer ->
@@ -86,13 +115,13 @@ parse(#{type := Type, frame := FrameWithCrc} = Data, State)
       end,
   <<Frame:L/binary, _FrameCrc/binary>> = FrameWithCrc,
   IState = state(State),
-  Handler = maps:get(handler, IState),
   {Packets, Infos} = case IState of
                        #{data := Packets_, infos := Infos_} ->
                          {Packets_, Infos_};
                        _ ->
                          egts_service:parse(Type, Frame)
                      end,
+  Handler = maps:get(handler, IState),
   NewIState = Data#{infos => Infos, handler => Handler},
   NewState = set_state(State, NewIState),
   {ok, Packets, NewState}.
@@ -112,21 +141,31 @@ answer(State) ->
   AnswerFrame = iolist_to_binary([<<PId:?USHORT, 0:?BYTE>>,
                                   [egts_service:response(Info) || Info <- Infos]]),
   AnswerCrc = crc16(AnswerFrame),
-  Answer = IState#{frame => <<AnswerFrame/binary, AnswerCrc:?USHORT>>,
-                   packet_id => PId,
-                   type => egts_pt_response,
-                   from => To,
-                   to => From},
-  NewIState = #{handler => Handler},
-  NewState = set_state(State, NewIState),
+  Answer = maps:remove(
+             header_crc,
+             maps:remove(
+               header,
+               IState#{frame => <<AnswerFrame/binary, AnswerCrc:?USHORT>>,
+                       packet_id => PId,
+                       type => egts_pt_response,
+                       from => To,
+                       to => From})),
+  NewState = set_state(State, #{handler => Handler}),
   {ok, Answer, NewState}.
 
 handle_hooks(_HookName, _Data, _HooksReplies, _State) ->
   ok.
 
+handle_info({{?MODULE, closed}, Socket}, State) ->
+  NewState = case terminal:socket(State) of
+               {?MODULE, Socket} ->
+                 terminal:set(State, close, normal);
+               _ -> State
+             end,
+  {ok, NewState};
 handle_info({'EXIT', Handler, Reason} = Msg, State) ->
-  case state(State) of
-    #{handler := Handler} ->
+  case terminal:socket(State) of
+    {?MODULE, Handler} ->
       {ok, terminal:set(State, close, Reason)};
     _ ->
       '_warning'("died unknown process ~p", [Msg]),
@@ -135,6 +174,36 @@ handle_info({'EXIT', Handler, Reason} = Msg, State) ->
 handle_info(Msg, State) ->
   '_warning'("unknown info msg ~w", [Msg]),
   {ok, State}.
+
+%%%===================================================================
+%%% Supervisor callbacks
+%%%===================================================================
+
+init(_Opts) ->
+  {ok,
+   {
+    {one_for_one, 5, 10},
+    [
+     {
+      egts_reg,
+      {egts_reg, start_link, []},
+      permanent,
+      5000,
+      worker,
+      []
+     }
+    ]
+   }
+  }.
+
+stop(_Stop) ->
+  ok.
+
+start() ->
+  application:start(?MODULE).
+
+start(_StartType, StartArgs) ->
+  supervisor:start_link({local, ?MODULE}, ?MODULE, StartArgs).
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================

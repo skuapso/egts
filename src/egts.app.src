@@ -9,5 +9,6 @@
                   logger,
                   terminator
                  ]},
-  {env, []}
+  {env, []},
+  {mod, {egts, []}}
  ]}.
