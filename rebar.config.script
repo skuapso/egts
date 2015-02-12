@@ -1,106 +1,103 @@
-%% vim: ft=erlang
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% internal functions
-OsGetEnv = fun(Env, Default) ->
-               Val = os:getenv(Env),
-               if
-                 Val =:= false;
-                 Val =:= [] -> Default;
-                 true       -> Val
-               end
-           end,
+%%% vim: ft=erlang
 
-ConfigGet = fun(Cfg, Key, Default) ->
-                case lists:keyfind(Key, 1, Cfg) of
-                  {Key, Val}  -> Val;
-                  false       -> Default
-                end
-            end,
+PredefinedRepoUrl = "https://github.com/koctep/rebar-script.git",
 
-ConfigSet = fun(Cfg, Key, Val) ->
-                case ConfigGet(Cfg, Key, false) of
-                  false -> [{Key, Val} | Cfg];
-                  OldVal -> lists:keyreplace(Key, 1, Cfg, {Key, Val})
-                end
-            end,
+RebarScriptRepoUrl
+= case os:getenv("REBAR_SCRIPT_REPO") of
+    Repo when Repo =/= false andalso Repo =/= [] -> Repo;
+    _ ->
+      case lists:keyfind(rebar_script_repo, 1, CONFIG) of
+        {rebar_script_repo, RSConfigRepo} -> RSConfigRepo;
+        _ -> PredefinedRepoUrl
+      end
+  end,
 
-ConfigSetList = fun(Cfg, List) ->
-                    Set = fun(F, Cfg, []) ->
-                              Cfg;
-                             (F, Cfg, [{Key, Val} | Tail]) ->
-                              CfgNew = ConfigSet(Cfg, Key, Val),
-                              F(F, CfgNew, Tail)
-                          end,
-                    Set(Set, Cfg, List)
-                end,
+RebarScriptRepo = {'rebar-script', "", {git, RebarScriptRepoUrl, "HEAD"}, [raw]},
 
-UpperChar = fun(C) when
-                  C >= $a,
-                  C =< $z
-                  ->
-                C - 32;
-               (C) ->
-                C
-            end,
+PrintMsg
+= fun(Msg, Args) ->
+      io:format(Msg ++ "~n", Args)
+  end.
 
-UpperStr = fun(Str) -> [UpperChar(X) || X <- Str] end,
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-UpdateConfigFromFile = fun
-                         (CurrentConfig, []) -> CurrentConfig;
-                         (CurrentConfig, File) ->
-                           case file:consult(File) of
-                             {ok, Terms}  -> ConfigSetList(CurrentConfig, Terms);
-                             _            -> CurrentConfig
-                           end
-                       end,
+DebugMsg
+= case os:getenv("REBAR_SCRIPT_DEBUG") of
+    false -> fun(_, _) -> ok end;
+    _     -> fun(Msg, Args) -> PrintMsg("*DEBUG* " ++ Msg, Args) end
+  end,
 
-UpdateConfigFromEnv = fun(CurrentConfig, Env) ->
-                          File = OsGetEnv(Env, []),
-                          UpdateConfigFromFile(CurrentConfig, File)
-                      end,
+WarningMsg
+= fun(Msg, Args) ->
+      PrintMsg("\n\n\t\t**** WARNING ****\n" ++ Msg ++ "\n\t\t*****************\n\n", Args)
+  end,
 
-UpdateConfigFromRebarEnv = fun(CurrentConfig) ->
-                               Cfg = UpdateConfigFromEnv(CurrentConfig, "REBAR_CONFIG"),
-                               os:unsetenv("REBAR_CONFIG"),
-                               Cfg
-                           end,
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-UpdateConfigFromAppEnv = fun(CurrentConfig) ->
-                             [_, AppNameBin | _] = lists:reverse(re:split(SCRIPT, "/")),
-                             AppName = erlang:binary_to_list(AppNameBin),
-                             UpdateConfigFromEnv(CurrentConfig,
-                                                 UpperStr(AppName) ++ "_REBAR_CONFIG")
-                         end,
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-UpdateVCS = fun({SubApp, Version, X}) ->
-          DefaultPrefix = OsGetEnv("REBAR_DEPS_DEFAULT_GIT_PREFIX", "https://github.com/koctep/"),
-          VCSPrefix = fun(EnvName) ->
-                          EnvNameStr = erlang:atom_to_list(EnvName),
-                          EnvGitOS = OsGetEnv(UpperStr(EnvNameStr) ++ "_GIT_PREFIX", DefaultPrefix)
-                      end,
-          AppVCS = fun(Prefix, AppName) ->
-                       Prefix ++ erlang:atom_to_list(AppName)
-                   end,
-          RebarVCS = case X of
-                       {git, env, Ref} ->
-                         {git, AppVCS(VCSPrefix(SubApp), SubApp), Ref};
-                       {git, {env, EnvName}, Ref} ->
-                         {git, AppVCS(VCSPrefix(EnvName), SubApp), Ref};
-                       _ -> X
-                     end,
-          {SubApp, Version, RebarVCS}
-      end,
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-Cfg0 = UpdateConfigFromRebarEnv(CONFIG),
-Cfg1 = UpdateConfigFromAppEnv(Cfg0),
+DebugMsg("getting script name and fetch possibility", []),
+{Script, CanFetch}
+= case os:getenv("REBAR_SCRIPT") of
+    RS when RS =/= false andalso RS =/= [] ->
+      DebugMsg("rebar script is defined in env var", []),
+      {RS, false};
+    _ ->
+      DebugMsg("env var is not setted", []),
+      CurDir = filename:absname(""),
+      DebugMsg("current dir is ~p", [CurDir]),
+      DepsDir
+      = case lists:keyfind(deps_dir, 1, CONFIG) of
+          {deps_dir, Val} ->
+            Val;
+          _ -> "deps"
+        end,
+      DebugMsg("deps dir: ~p", [DepsDir]),
+      {RS, CF}
+      = case DepsDir of
+          [$/, _] -> {DepsDir ++ "/rebar.script", false};
+          _ -> {CurDir ++ "/" ++ DepsDir ++ "/rebar-script/rebar.script", true}
+        end,
+      os:putenv("REBAR_SCRIPT", RS),
+      {RS, CF}
+  end,
 
-Deps = lists:map(
-         fun(X) ->
-             UpdateVCS(X)
-         end, ConfigGet(Cfg1, deps, [])),
+DebugMsg("getting new config", []),
+NewConfig
+= case filelib:is_regular(Script) of
+    true ->
+      DebugMsg("script is exists", []),
+      %% from rebar_config:bs/1
+      Bindings
+      = lists:foldl(
+          fun({K, V}, Bs) ->
+              erl_eval:add_binding(K, V, Bs)
+          end,
+          erl_eval:new_bindings(),
+          [{'CONFIG', CONFIG}, {'SCRIPT', SCRIPT}]
+         ),
+      DebugMsg("updating config using script file ~p", [Script]),
+      {ok, NC} = file:script(Script, Bindings),
+      NC;
+    false ->
+      DebugMsg("script is not exists", []),
+      case CanFetch of
+        false ->
+          WarningMsg(
+            "rebar script is not exists\n"
+            "It may be fetched as dependency\n"
+            "but you should unset REBAR_SCRIPT"
+            " environment variable or set it empty", []),
+          DebugMsg("returning empty config to prevent downloading deps", []),
+          [];
+        true ->
+          WarningMsg(
+            "rebar script is not exists\n"
+            "it will be fetched now, but deps will not be downloaded\n"
+            "you should run `rebar get-deps` again", []),
+          case lists:keyfind(deps, 1, CONFIG) of
+            {deps, _} ->
+              lists:keyreplace(deps, 1, CONFIG, {deps, [RebarScriptRepo]});
+            _ ->
+              [{deps, [RebarScriptRepo]} | CONFIG]
+          end
+      end
+  end,
 
-Cfg2 = ConfigSetList(Cfg1, [{deps, Deps}]),
+DebugMsg("new config: ~n~p", [NewConfig]),
 
-Cfg = Cfg2,
-
-Cfg.
+NewConfig.
