@@ -144,7 +144,7 @@ handle_info({tcp, Socket, TcpData}, #state{
                                     address = Address,
                                     handler = Handler} = State)
   when (byte_size(TcpData) + byte_size(Incomplete)) =< 65535->
-  Data = <<TcpData/binary, Incomplete/binary>>,
+  Data = <<Incomplete/binary, TcpData/binary>>,
   '_trace'("parsing ~w", [Data]),
   {Packets, Incomplete1} = unpack([], Data, Address),
   lists:map(
