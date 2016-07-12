@@ -73,7 +73,7 @@ header_length(F) -> header_length(F, 0).
 header_length(0, L) -> L * 4;
 header_length(F, L) -> header_length(F bsr 1, F band 1 + L).
 
-parse_records(P, _Info, <<>>) -> lists:reverse(P);
+parse_records(P, _Info, <<>>) -> P;
 parse_records(P, #{sst := SST} = Info, <<Type:?BYTE, L:?USHORT, Data:L/binary, Else/binary>>) ->
   '_trace'("subrecord ~w", [Data]),
   '_trace'("else ~w", [Else]),
