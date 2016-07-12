@@ -13,6 +13,7 @@
 -export([lls/2]).
 -export([passengers_counters/2]).
 -export([accel/2]).
+-export([can/2]).
 -export([response/1]).
 
 -include("egts_binary_types.hrl").
@@ -244,6 +245,34 @@ accel(P, ATM, <<RTM:?USHORT, XAAV:?SHORT, YAAV:?SHORT, ZAAV:?SHORT, Rest/binary>
 accel(P, _ATM, <<>>) ->
   Accel = maps:get(accel, P),
   misc:update_path([accel], lists:reverse(Accel), P).
+
+can(P, <<0:8, 0:8, Data/binary>>) ->
+  parse_can(P, Data).
+
+parse_can(P, <<0:?BYTE, 1:?BYTE, 4:?BYTE, CanMHS:?UINT, Rest/binary>>) ->
+  parse_can(misc:update_path([can, mhs], CanMHS * 0.05, P), Rest);
+parse_can(P, <<0:?BYTE, 2:?BYTE, 4:?BYTE, Dist:?UINT, Rest/binary>>) ->
+  parse_can(misc:update_path([can, odometr], Dist * 0.125, P), Rest);
+parse_can(P, <<0:?BYTE, 3:?BYTE, 1:?BYTE, Speed:?BYTE, Rest/binary>>) ->
+  parse_can(misc:update_path([can, odometr], Speed, P), Rest);
+parse_can(P, <<1:?BYTE, 1:?BYTE, 4:?BYTE, FFC:?UINT, Rest/binary>>) ->
+  parse_can(misc:update_path([can, full_fuel_consamption], FFC, P), Rest);
+parse_can(P, <<2:?BYTE, 1:?BYTE, 1:?BYTE, Temp:?BYTE, Rest/binary>>) ->
+  parse_can(misc:update_path([can, coolant_temp], Temp - 40, P), Rest);
+parse_can(P, <<2:?BYTE, 2:?BYTE, 2:?BYTE, ETPM:?USHORT, Rest/binary>>) ->
+  parse_can(misc:update_path([can, engine_turns_per_minute], ETPM * 0.125, P), Rest);
+parse_can(P, <<2:?BYTE, 3:?BYTE, 1:?BYTE, Accel:?BYTE, Rest/binary>>) ->
+  parse_can(misc:update_path([can, accelerator], Accel, P), Rest);
+parse_can(P, <<3:?BYTE, Axis:?BYTE, 2:?BYTE, Weight:?USHORT, Rest/binary>>) ->
+  parse_can(misc:update_path([can, axis_weight, Axis], Weight * 0.5, P), Rest);
+parse_can(P, <<6:?BYTE, 0:?BYTE, 2:?BYTE, _State:?USHORT, Rest/binary>>) ->
+  '_warning'("unparsed can inbound digit states ~p", [_State]),
+  parse_can(P, Rest);
+parse_can(P, <<6:?BYTE, 3:?BYTE, 4:?BYTE, Square:?UINT, Rest/binary>>) ->
+  parse_can(misc:update_path([can, square], Square * 0.01, P), Rest);
+parse_can(P, <<Group:?BYTE, Type:?BYTE, Len:?BYTE, Data:Len/binary, Rest/binary>>) ->
+  '_warning'("unparsed can data: group ~p, type ~p, data ~p", [Group, Type, Data]),
+  parse_can(P, Rest).
 
 %% internal functions
 sign(0) ->  1;
