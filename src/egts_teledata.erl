@@ -12,6 +12,7 @@
 -export([abs_loopin/2]).
 -export([lls/2]).
 -export([passengers_counters/2]).
+-export([accel/2]).
 -export([response/1]).
 
 -include("egts_binary_types.hrl").
@@ -221,6 +222,27 @@ passengers_counters(P, Port, Bits, <<In:?BYTE, Out:?BYTE, Rest/binary>>)
     Rest);
 passengers_counters(P, Port, Bits, Data) ->
   passengers_counters(P, Port, Bits bsr 1, Data).
+
+accel(P, <<SA:?BYTE, ATM:?UINT, AccelData/binary>>) when byte_size(AccelData) =:= SA * 8 ->
+  accel(P, ATM, AccelData);
+accel(P, <<SA:?BYTE, _ATM:?UINT, AccelData/binary>>) ->
+  '_warning'("accel format error: SA is ~p and data length is ~p", [SA, byte_size(AccelData)]),
+  P.
+
+accel(P, ATM, <<RTM:?USHORT, XAAV:?SHORT, YAAV:?SHORT, ZAAV:?SHORT, Rest/binary>>) ->
+  Accel = maps:get(accel, P, []),
+  accel(misc:update_path([accel],
+                         [#{time => ATM + RTM,
+                            x => XAAV,
+                            y => YAAV,
+                            z => ZAAV
+                           } | Accel],
+                         P),
+       ATM,
+       Rest);
+accel(P, _ATM, <<>>) ->
+  Accel = maps:get(accel, P),
+  misc:update_path([accel], lists:reverse(Accel), P).
 
 %% internal functions
 sign(0) ->  1;

@@ -148,7 +148,7 @@ subrecord(teledata, 17)     -> position_ext;
 subrecord(teledata, 18)     -> sensors;
 subrecord(teledata, 19)     -> counters;
 subrecord(teledata, 20)     -> state;
-subrecord(teledata, 21)     -> state;
+subrecord(teledata, 21)     -> accel;
 subrecord(teledata, 22)     -> loopin;
 subrecord(teledata, 23)     -> abs_digital;
 subrecord(teledata, 24)     -> abs_analog;
