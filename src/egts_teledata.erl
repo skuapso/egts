@@ -190,7 +190,6 @@ lls(P, <<_:1, 0:1, 0:2, 0:1, N:3, Port:?USHORT, Val:?UINT>>) ->
       P));
 lls(P, Data) -> '_warning'("unsupported lls data ~s", [Data]), P.
 
-passengers_counters(P, _Data) -> '_warning'("not parsed passengers counter"), P;
 passengers_counters(P, <<>>) -> P;
 passengers_counters(P, <<_:7, 1:1, DPR:?BYTE, DRL:?BYTE, Port:?USHORT, Rest/binary>>) ->
   misc:update_path(
@@ -205,7 +204,9 @@ passengers_counters(P, <<_:7, 0:1, DPR:?BYTE, DRL:?BYTE, Port:?USHORT, Rest/bina
          #{doors_presented => DPR,
            doors_released => DRL},
          P),
-  passengers_counters(P1, Port, DPR, Rest).
+  passengers_counters(P1, Port, DPR, Rest);
+passengers_counters(P, _Data) -> '_warning'("not parsed passengers counter"), P.
+
 passengers_counters(P, _Port, 0, <<>>) -> P;
 passengers_counters(P, Port, Bits, <<In:?BYTE, Out:?BYTE, Rest/binary>>)
     when Bits band 1 =:= 1 ->
