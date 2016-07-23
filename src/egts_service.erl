@@ -2,7 +2,8 @@
 
 -export([
   parse/2,
-  response/1
+  response/1,
+  service/1
   ]).
 
 -include_lib("logger/include/log.hrl").
@@ -145,6 +146,7 @@ subrecord(auth, 1)          -> term_identify;
 subrecord(auth, 5)          -> dispatcher_identity;
 subrecord(auth, 6)          -> params;
 subrecord(auth, 7)          -> info;
+subrecord(auth, 8)          -> service_info;
 
 subrecord(teledata, 16)     -> position;
 subrecord(teledata, 17)     -> position_ext;

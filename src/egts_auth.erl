@@ -5,6 +5,7 @@
 -export([dispatcher_identity/2]).
 -export([params/2]).
 -export([info/2]).
+-export([service_info/2]).
 
 -include("egts_binary_types.hrl").
 -include_lib("logger/include/log.hrl").
@@ -78,3 +79,24 @@ info(P, Data) ->
     [SS, <<>>] ->
       misc:update_path([auth, server_sequence], SS, P2)
   end.
+
+service_info(P, <<ST:?BYTE, SST:?BYTE, SRVA:1, _:5, SRVRP:2>>) ->
+  Type = egts_service:service(ST),
+  State = case SST of
+            0 -> in_service;
+            128 -> out_of_service;
+            129 -> denied;
+            130 -> no_conf;
+            131 -> temp_unavail
+          end,
+  ReqType = case SRVA of
+              0 -> supported;
+              1 -> request
+              end,
+  Priority = case SRVRP of
+               0 -> highest;
+               1 -> high;
+               2 -> middle;
+               3 -> low
+             end,
+  misc:update_path([services, ReqType, Type], #{state => State, priority => Priority}, P).
