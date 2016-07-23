@@ -93,7 +93,17 @@ uin(#{type := Type, frame := FrameWithCrc}, State) when Type =/= egts_pt_routing
       end,
   <<Frame:L/binary, _FrameCrc/binary>> = FrameWithCrc,
   {[Record | _], _} = {Data, Infos} = egts_service:parse(Type, Frame),
-  UIN = maps:get(imei, Record, maps:get(terminal_id, Record, maps:get(object_id, Record))),
+  UIN = case maps:get(imei, Record, 'undefined') of
+          'undefined' ->
+            case maps:get(terminal_id, Record, 'undefined') of
+              'undefiend' ->
+                maps:get(object_id, Record, undefined);
+              UIN_ ->
+                UIN_
+            end;
+          UIN_ ->
+            UIN_
+        end,
   IState = state(State),
   NewState = set_state(State, IState#{data => Data, infos => Infos}),
   {ok, UIN, NewState}.
