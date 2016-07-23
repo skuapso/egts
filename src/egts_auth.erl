@@ -1,7 +1,8 @@
 -module(egts_auth).
 
--export([term_identify/2]).
 -export([response/1]).
+-export([term_identify/2]).
+-export([dispatcher_identity/2]).
 
 -include("egts_binary_types.hrl").
 -include_lib("logger/include/log.hrl").
@@ -41,3 +42,9 @@ term_identify(P, Opts, <<Val:?USHORT, Else/binary>>, N)
 term_identify(P, Opts, <<Val:15/binary, Else/binary>>, N)
     when N =:= 7 ->
   term_identify(P#{msisdn => Val}, Opts bsr 1, Else, N + 1).
+
+dispatcher_identity(P, <<DT:?BYTE, DID:?UINT, DSCR/binary>>) ->
+  case DSCR of
+    <<>> -> P#{dispatcher => #{type => DT, id => DID}};
+    DSCR -> P#{dispatcher => #{type => DT, id => DID, description => DSCR}}
+  end.

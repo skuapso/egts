@@ -142,6 +142,7 @@ service(ecall)     -> 10.
 
 subrecord(_, 0)             -> response;
 subrecord(auth, 1)          -> term_identify;
+subrecord(auth, 5)          -> dispatcher_identity;
 
 subrecord(teledata, 16)     -> position;
 subrecord(teledata, 17)     -> position_ext;
