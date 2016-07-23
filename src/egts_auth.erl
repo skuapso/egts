@@ -4,6 +4,7 @@
 -export([term_identify/2]).
 -export([dispatcher_identity/2]).
 -export([params/2]).
+-export([info/2]).
 
 -include("egts_binary_types.hrl").
 -include_lib("logger/include/log.hrl").
@@ -66,3 +67,14 @@ params(P, <<_:1, 1:1, 0:6, Data/binary>>) ->
 params(P, <<_:1, 0:7, _Unparsed/binary>>) ->
   '_warning'(_Unparsed =/= <<>>, "unparsed ~p", [_Unparsed]),
   P.
+
+info(P, Data) ->
+  [UNM, UPSW | Rest] = binary:split(Data, <<0>>, [global]),
+  P1 = misc:update_path([auth, user], UNM, P),
+  P2 = misc:update_path([auth, password], UPSW, P1),
+  case Rest of
+    [<<>>] ->
+      P2;
+    [SS, <<>>] ->
+      misc:update_path([auth, server_sequence], SS, P2)
+  end.
