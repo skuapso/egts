@@ -3,6 +3,7 @@
 -export([response/1]).
 -export([term_identify/2]).
 -export([dispatcher_identity/2]).
+-export([params/2]).
 
 -include("egts_binary_types.hrl").
 -include_lib("logger/include/log.hrl").
@@ -48,3 +49,20 @@ dispatcher_identity(P, <<DT:?BYTE, DID:?UINT, DSCR/binary>>) ->
     <<>> -> P#{dispatcher => #{type => DT, id => DID}};
     DSCR -> P#{dispatcher => #{type => DT, id => DID, description => DSCR}}
   end.
+
+params(P, <<FLGBits:5, PKE:1, ENA:2, PKL:?USHORT, PBK:PKL/binary, Rest/binary>>)
+  when ENA =/= 0 andalso PKE =:= 1 ->
+  params(misc:update_path([auth, public_key], PBK, P), <<FLGBits:5, 0:3, Rest/binary>>);
+params(P, <<FLGBits:4, 1:1, 0:3, ISL:?USHORT, Rest/binary>>) ->
+  params(misc:update_path([auth, isl], ISL, P), <<FLGBits:4, 0:4, Rest/binary>>);
+params(P, <<FLGBits:3, 1:1, 0:4, MSZ:?USHORT, Rest/binary>>) ->
+  params(misc:update_apth([auth, msz], MSZ, P), <<FLGBits:3, 0:5, Rest/binary>>);
+params(P, <<FLGBits:2, 1:1, 0:5, Data/binary>>) ->
+  [SS, Rest] = binary:split(Data, <<0>>),
+  params(misc:update_path([auth, server_sequence], SS, P), <<FLGBits:2, 0:6, Rest/binary>>);
+params(P, <<_:1, 1:1, 0:6, Data/binary>>) ->
+  [EXP, Rest] = binary:split(Data, <<0>>),
+  params(misc:update_path([auth, exp], EXP, P), <<0:8, Rest/binary>>);
+params(P, <<_:1, 0:7, _Unparsed/binary>>) ->
+  '_warning'(_Unparsed =/= <<>>, "unparsed ~p", [_Unparsed]),
+  P.
