@@ -6,6 +6,7 @@
 -export([params/2]).
 -export([info/2]).
 -export([service_info/2]).
+-export([result/2]).
 
 -include("egts_binary_types.hrl").
 -include_lib("logger/include/log.hrl").
@@ -100,3 +101,6 @@ service_info(P, <<ST:?BYTE, SST:?BYTE, SRVA:1, _:5, SRVRP:2>>) ->
                3 -> low
              end,
   misc:update_path([services, ReqType, Type], #{state => State, priority => Priority}, P).
+
+result(P, <<RCD:?BYTE>>) ->
+  P#{auth => #{result => RCD}}.
