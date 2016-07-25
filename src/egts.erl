@@ -93,20 +93,25 @@ uin(#{type := Type, frame := FrameWithCrc}, State) when Type =/= egts_pt_routing
       end,
   <<Frame:L/binary, _FrameCrc/binary>> = FrameWithCrc,
   {[Record | _], _} = {Data, Infos} = egts_service:parse(Type, Frame),
-  UIN = case maps:get(imei, Record, 'undefined') of
-          'undefined' ->
-            case maps:get(terminal_id, Record, 'undefined') of
-              'undefiend' ->
-                maps:get(object_id, Record, undefined);
-              UIN_ ->
-                UIN_
-            end;
-          UIN_ ->
-            UIN_
-        end,
   IState = state(State),
-  NewState = set_state(State, IState#{data => Data, infos => Infos}),
-  {ok, UIN, NewState}.
+  IState1 = IState#{data => Data, infos => Infos},
+  {UIN, IState2} = case Record of
+                     %% TODO: it probably will be better to create new protocol
+                     #{dispatcher := _Dispatcher} ->
+                       %% TODO: it might be better to update first packet
+                       {skip, IState1#{infos => (Infos ++ [(hd(Infos))#{auth => #{status => 0}}])}};
+                     Record ->
+                       UIN_ = case Record of
+                               #{imei := IMEI} ->
+                                 IMEI;
+                               #{terminal_id := TerminalId} ->
+                                 TerminalId;
+                               #{object_id := ObjectId} ->
+                                 ObjectId
+                             end,
+                       {UIN_, IState1}
+                   end,
+  {ok, UIN, set_state(State, IState2)}.
 
 to_binary(Type, #{header := Header, header_crc := HeadCrc, frame := Frame})
   when Type =:= raw;
