@@ -9,6 +9,28 @@
 -include_lib("logger/include/log.hrl").
 -include("egts_binary_types.hrl").
 
+response(#{auth := #{status := Code}} = Info) ->
+  RL = 4,
+  RN = maps:get(msg_id, Info),
+  RSOD = maps:get(rsod, Info),
+  SSOD = maps:get(ssod, Info),
+  GRP = maps:get(group_record, Info),
+  RPP = maps:get(rpp, Info),
+  Opts = 0,
+  SST = service(auth),
+  RST = service(auth),
+  <<RL:?USHORT,
+    RN:?USHORT,
+    SSOD:1,
+    RSOD:1,
+    GRP:1,
+    RPP:2,
+    Opts:3,
+    SST:8,
+    RST:8,
+    9:8,
+    1:?USHORT,
+    Code:?BYTE>>;
 response(Info) ->
   RL = 6,
   RN = maps:get(msg_id, Info),
