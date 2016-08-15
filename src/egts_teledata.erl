@@ -289,7 +289,7 @@ digital_in(P, I, <<DIn:8, Else/binary>>, N) when I band 1 =:= 1 ->
       [digital, in],
       maps:merge(
         maps:get(in, maps:get(digital, P, #{}), #{}),
-        misc:bits2tuples(8, DIn, N)),
+        misc:bits2map(8, DIn, N)),
       P),
     I bsr 1,
     Else,
