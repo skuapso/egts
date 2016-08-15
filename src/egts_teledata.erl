@@ -272,7 +272,9 @@ parse_can(P, <<6:?BYTE, 3:?BYTE, 4:?BYTE, Square:?UINT, Rest/binary>>) ->
   parse_can(misc:update_path([can, square], Square * 0.01, P), Rest);
 parse_can(P, <<Group:?BYTE, Type:?BYTE, Len:?BYTE, Data:Len/binary, Rest/binary>>) ->
   '_warning'("unparsed can data: group ~p, type ~p, data ~p", [Group, Type, Data]),
-  parse_can(P, Rest).
+  parse_can(P, Rest);
+parse_can(P, <<>>) ->
+  P.
 
 %% internal functions
 sign(0) ->  1;
