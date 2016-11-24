@@ -178,9 +178,13 @@ abs_loopin(P, <<Low:4, Val:4, High:8>>) ->
     P).
 
 lls(P, <<>>) -> P;
-lls(P, <<_:1, 1:1, _/binary>>) ->
+lls(P, <<_:1, 1:1, _:2, _:1, N:3, Port:?USHORT, _/binary>>) ->
   '_warning'("lls reading error"),
-  P;
+  LLSs = maps:get(lls, P, []),
+  misc:update_path(
+    [lls],
+    [#{port => N, mac => Port, units => error} | LLSs],
+    P);
 lls(P, <<_:1, 0:1, 2#00:2, 0:1, N:3, Port:?USHORT, Val:?UINT>>) ->
   LLSs = maps:get(lls, P, []),
   misc:update_path(
