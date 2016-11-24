@@ -179,16 +179,26 @@ abs_loopin(P, <<Low:4, Val:4, High:8>>) ->
 
 lls(P, <<>>) -> P;
 lls(P, <<_:1, 1:1, _/binary>>) ->
-  '_warning'("lls reading '_err'or"),
+  '_warning'("lls reading error"),
   P;
-lls(P, <<_:1, 0:1, 0:2, 0:1, N:3, Port:?USHORT, Val:?UINT>>) ->
+lls(P, <<_:1, 0:1, 2#00:2, 0:1, N:3, Port:?USHORT, Val:?UINT>>) ->
+  LLSs = maps:get(lls, P, []),
   misc:update_path(
-    [lls_port, N],
-    Port,
-    misc:update_path(
-      [lls, N],
-      Val,
-      P));
+    [lls],
+    [#{port => N, mac => Port, val => Val, units => none} | LLSs],
+    P);
+lls(P, <<_:1, 0:1, 2#01:2, 0:1, N:3, Port:?USHORT, Val:?UINT>>) ->
+  LLSs = maps:get(lls, P, []),
+  misc:update_path(
+    [lls],
+    [#{port => N, mac => Port, val => Val, units => percent} | LLSs],
+    P);
+lls(P, <<_:1, 0:1, 2#10:2, 0:1, N:3, Port:?USHORT, Val:?UINT>>) ->
+  LLSs = maps:get(lls, P, []),
+  misc:update_path(
+    [lls],
+    [#{port => N, mac => Port, val => Val/10, units => liter} | LLSs],
+    P);
 lls(P, Data) -> '_warning'("unsupported lls data ~s", [Data]), P.
 
 passengers_counters(P, <<>>) -> P;
