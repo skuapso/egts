@@ -184,7 +184,8 @@ subrecord(teledata, 25)     -> abs_counter;
 subrecord(teledata, 26)     -> abs_loopin;
 subrecord(teledata, 27)     -> lls;
 subrecord(teledata, 28)     -> passengers_counters;
-subrecord(teledata, 29)     -> can.
+subrecord(teledata, 29)     -> can;
+subrecord(teledata, 30)     -> identity.
 
 module(auth) -> egts_auth;
 module(teledata) -> egts_teledata;

@@ -14,6 +14,7 @@
 -export([passengers_counters/2]).
 -export([accel/2]).
 -export([can/2]).
+-export([identity/2]).
 -export([response/1]).
 
 -include("egts_binary_types.hrl").
@@ -337,3 +338,7 @@ nav_systems(I, N=6, NavSys) when I band 1 =:= 1 -> nav_systems(I bsr 1, N + 1, [
 nav_systems(I, N=7, NavSys) when I band 1 =:= 1 -> nav_systems(I bsr 1, N + 1, [irmss | NavSys]);
 nav_systems(I, N=8, NavSys) when I band 1 =:= 1 -> nav_systems(I bsr 1, N + 1, [qzss | NavSys]);
 nav_systems(I, N, NavSys) -> nav_systems(I bsr 1, N + 1, NavSys).
+
+identity(P, <<DeviceAddress:?USHORT, CardNumberBin/binary>>) ->
+  CardNumber = list_to_integer(misc:string_to_hex(lists:reverse(binary_to_list(CardNumberBin)))),
+  misc:update_path([identity, DeviceAddress], CardNumber, P).
