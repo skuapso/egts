@@ -16,6 +16,7 @@
 -export([can/2]).
 -export([identity/2]).
 -export([response/1]).
+-export([skip/2]).
 
 -include("egts_binary_types.hrl").
 -include_lib("logger/include/log.hrl").
@@ -342,3 +343,5 @@ nav_systems(I, N, NavSys) -> nav_systems(I bsr 1, N + 1, NavSys).
 identity(P, <<DeviceAddress:?USHORT, CardNumberBin/binary>>) ->
   CardNumber = list_to_integer(misc:string_to_hex(lists:reverse(binary_to_list(CardNumberBin)))),
   misc:update_path([identity, DeviceAddress], CardNumber, P).
+
+skip(P, _) -> P.

@@ -171,6 +171,7 @@ subrecord(auth, 7)          -> info;
 subrecord(auth, 8)          -> service_info;
 subrecord(auth, 9)          -> result;
 
+
 subrecord(teledata, 16)     -> position;
 subrecord(teledata, 17)     -> position_ext;
 subrecord(teledata, 18)     -> sensors;
@@ -185,7 +186,8 @@ subrecord(teledata, 26)     -> abs_loopin;
 subrecord(teledata, 27)     -> lls;
 subrecord(teledata, 28)     -> passengers_counters;
 subrecord(teledata, 29)     -> can;
-subrecord(teledata, 30)     -> identity.
+subrecord(teledata, 30)     -> identity;
+subrecord(teledata, _)      -> skip.
 
 module(auth) -> egts_auth;
 module(teledata) -> egts_teledata;
