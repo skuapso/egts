@@ -187,7 +187,12 @@ subrecord(teledata, 27)     -> lls;
 subrecord(teledata, 28)     -> passengers_counters;
 subrecord(teledata, 29)     -> can;
 subrecord(teledata, 30)     -> identity;
-subrecord(teledata, _)      -> skip.
+
+subrecord(teledata, 15)     -> ext_santel_protobuf;
+
+subrecord(teledata, _N)     ->
+  '_warning'("skipping ~p", [_N]),
+  skip.
 
 module(auth) -> egts_auth;
 module(teledata) -> egts_teledata;

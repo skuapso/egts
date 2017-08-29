@@ -18,6 +18,8 @@
 -export([response/1]).
 -export([skip/2]).
 
+-export([ext_santel_protobuf/2]).
+
 -include("egts_binary_types.hrl").
 -include_lib("logger/include/log.hrl").
 
@@ -345,3 +347,8 @@ identity(P, <<DeviceAddress:?USHORT, CardNumberBin/binary>>) ->
   misc:update_path([identity, DeviceAddress], CardNumber, P).
 
 skip(P, _) -> P.
+
+ext_santel_protobuf(P, Packet) ->
+  Data = egts_ext_santel:decode_msg(Packet, storage_record),
+  '_debug'("santel data ~p", [Data]),
+  misc:update_path([ext, santel], Data, P).

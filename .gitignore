@@ -2,3 +2,5 @@ ebin/*.beam
 ebin/*.app
 lib/*
 .*.swp
+src/egts_ext_santel.erl
+.rebar
