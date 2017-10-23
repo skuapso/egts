@@ -351,4 +351,18 @@ skip(P, _) -> P.
 ext_santel_protobuf(P, Packet) ->
   Data = egts_ext_santel:decode_msg(Packet, storage_record),
   '_debug'("santel data ~p", [Data]),
-  misc:update_path([ext, santel], Data, P).
+  PrettyData = ext_santel_pretty(Data, []),
+  misc:update_path([ext, santel], PrettyData, P).
+
+ext_santel_pretty(#{} = Data, Keys) ->
+  maps:fold(fun(_K, '$undef', Acc) -> Acc;
+               (K, V, Acc) when is_map(V) orelse is_list(V) -> maps:put(K, ext_santel_pretty(V, [K | Keys]), Acc);
+               (K, V, Acc) -> maps:put(K, ext_santel_pretty(V, [K | Keys]), Acc)
+            end, #{}, Data);
+ext_santel_pretty([_ | _] = Data, Keys) ->
+  lists:map(fun(V) -> ext_santel_pretty(V, Keys) end, Data);
+ext_santel_pretty(V, [Flags, sens_can_log_tmp_data_ext])
+  when is_integer(V) andalso (Flags == flags_low orelse Flags == flags_high) ->
+  misc:bits2map(32, V);
+ext_santel_pretty(V, _K) ->
+  V.
