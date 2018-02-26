@@ -77,11 +77,12 @@ recv(Socket, L) when is_port(Socket) ->
 %%% Terminal callbacks
 %%%===================================================================
 
-init(_Opts, State) ->
+init(Opts, State) ->
+  '_debug'("options ~p", [Opts]),
   {tcp, Socket} = terminal:socket(State),
   {ok, Pid} = egts_socket:accept(Socket),
   NewState = terminal:set(
-               set_state(State, #{handler => Pid}),
+               set_state(State, (parse_opts(Opts))#{handler => Pid}),
                socket,
                {?MODULE, Socket}),
   {ok, NewState}.
@@ -109,7 +110,12 @@ uin(#{type := Type, frame := FrameWithCrc}, State) when Type =/= egts_pt_routing
                                #{object_id := ObjectId} ->
                                  ObjectId
                              end,
-                       {UIN_, IState1}
+                       case maps:get(auth, IState) of
+                         'true' ->
+                           {UIN_, IState1#{infos => (Infos ++ [(hd(Infos))#{auth => #{status => 0}}])}};
+                         _ ->
+                           {UIN_, IState1}
+                       end
                    end,
   {ok, UIN, set_state(State, IState2)}.
 
@@ -223,5 +229,13 @@ start(_StartType, StartArgs) ->
 %%% Internal functions
 %%%===================================================================
 
+parse_opts(Opts) ->
+  parse_opts(Opts, #{}).
+
+parse_opts([], Opts) -> Opts;
+parse_opts([Auth | Rest], Opts) when Auth =:= auth orelse Auth =:= {auth, true} ->
+  parse_opts(Rest, Opts#{auth => true});
+parse_opts([_ | Rest], Opts) ->
+  parse_opts(Rest, Opts).
 
 %% vim: ft=erlang
